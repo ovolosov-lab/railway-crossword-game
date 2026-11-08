@@ -38,22 +38,29 @@ class WordCatalogMigrationTests(unittest.TestCase):
             self.assertLessEqual(len(word_text), 100)
             self.assertTrue(str(row["definition"]).strip())
 
+    def test_numeric_file_names_are_sorted_and_part_numbers_are_unique(self) -> None:
+        numbers = [int(path.stem) for path in MIGRATION._word_files()]
+        self.assertEqual(numbers, sorted(numbers))
+        self.assertEqual(len(numbers), len(set(numbers)))
+        self.assertIn(1, numbers)
+
     def test_first_duplicate_occurrence_is_kept(self) -> None:
-        source_dir = Path(__file__).resolve().parents[1] / "migrations" / "words"
         first_occurrence: tuple[str, str] | None = None
         duplicate_occurrences = 0
-        for number in range(1, 21):
-            source_path = (
-                source_dir / f"кроссворд_подсказки_часть_{number}.csv"
-            )
+        seen_words: set[str] = set()
+        total_duplicate_rows = 0
+        for source_path in MIGRATION._word_files():
             with source_path.open(encoding="utf-8-sig", newline="") as source:
                 for fields in csv.reader(source, delimiter=";"):
                     if len(fields) != 2:
                         continue
                     word_text, definition = (field.strip() for field in fields)
-                    if MIGRATION._normalized_duplicate_key(word_text) != (
-                        MIGRATION._normalized_duplicate_key("пицца")
-                    ):
+                    duplicate_key = MIGRATION._normalized_duplicate_key(word_text)
+                    if duplicate_key in seen_words:
+                        total_duplicate_rows += 1
+                    else:
+                        seen_words.add(duplicate_key)
+                    if duplicate_key != MIGRATION._normalized_duplicate_key("пицца"):
                         continue
                     if first_occurrence is None:
                         first_occurrence = (word_text, definition)
@@ -71,7 +78,7 @@ class WordCatalogMigrationTests(unittest.TestCase):
         self.assertEqual(imported["word_text"], first_occurrence[0])
         self.assertEqual(imported["definition"], first_occurrence[1])
         self.assertGreater(duplicate_occurrences, 0)
-        self.assertEqual(self.skipped_duplicates, 54)
+        self.assertEqual(self.skipped_duplicates, total_duplicate_rows)
 
     def test_letter_count_includes_spaces_and_punctuation(self) -> None:
         self.assertEqual(MIGRATION._letter_count("Том-Ям"), 6)

@@ -29,7 +29,10 @@ down_revision: Union[str, None] = "d4f1a9c2e706"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-_WORD_FILE_PATTERN = re.compile(r"^кроссворд_подсказки_часть_(\d+)\.csv$")
+_WORD_FILE_PATTERNS = (
+    re.compile(r"^(\d+)\.csv$"),
+    re.compile(r"^кроссворд_подсказки_часть_(\d+)\.csv$"),
+)
 _LANGUAGE_CODE = "ru"
 
 
@@ -41,15 +44,21 @@ def _word_files() -> list[Path]:
     words_dir = _migration_data_dir() / "words"
     numbered_files: list[tuple[int, Path]] = []
     for path in words_dir.glob("*.csv"):
-        match = _WORD_FILE_PATTERN.fullmatch(path.name)
+        match = None
+        for pattern in _WORD_FILE_PATTERNS:
+            match = pattern.fullmatch(path.name)
+            if match is not None:
+                break
         if match is None:
             raise ValueError(f"Unexpected word catalog file name: {path.name}")
         numbered_files.append((int(match.group(1)), path))
 
     numbered_files.sort(key=lambda item: item[0])
     numbers = [number for number, _ in numbered_files]
-    if not numbers or numbers != list(range(1, len(numbers) + 1)):
-        raise ValueError("Word catalog files must be numbered consecutively from 1.")
+    if not numbers or numbers[0] < 1:
+        raise ValueError("Word catalog files must use positive part numbers.")
+    if len(numbers) != len(set(numbers)):
+        raise ValueError("Word catalog file part numbers must be unique.")
     return [path for _, path in numbered_files]
 
 
