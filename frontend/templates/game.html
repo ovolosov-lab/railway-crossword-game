@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-cookie-name" content="{{ csrf_cookie_name }}">
+    <title>Игра — Железная дорога</title>
+    <link rel="stylesheet" href="/static/auth.css">
+    <link rel="stylesheet" href="/static/game.css">
+    <script src="/static/confetti.js" defer></script>
+    <script src="/static/game.js" defer></script>
+  </head>
+  <body>
+    <main
+      class="game-shell"
+      id="game-app"
+      data-sync-interval="{{ frontend_sync_interval }}"
+    >
+      <section class="game-layout" aria-labelledby="game-title">
+        <aside class="game-panel">
+          <p class="eyebrow">Игра для вечеринок</p>
+          <h1 id="game-title" class="game-title">Разгадай кроссворд</h1>
+          <p class="intro">Соедините начальный и конечный города непрерывной цепочкой железных дорог и разгадайте кроссворд.</p>
+
+          <div class="round-summary" aria-live="polite">
+            <div>
+              <span class="summary-label">До конца раунда</span>
+              <strong id="round-timer">Загрузка…</strong>
+            </div>
+            <span class="round-status" id="round-status">Загружаем игру</span>
+          </div>
+
+          <div class="game-message" id="game-message" role="status" hidden></div>
+          <div class="game-loading" id="game-loading" role="status">Загружаем карту и статистику…</div>
+
+          <section class="player-card" id="player-card" aria-live="polite" hidden>
+            <h2 id="player-heading">Статистика раунда</h2>
+            <p id="player-description"></p>
+            <p class="player-score" id="player-score" hidden></p>
+            <div class="assigned-cities" id="assigned-cities" hidden></div>
+            <p class="route-progress" id="route-progress" hidden></p>
+            <button class="game-button" id="join-button" type="button" hidden>Присоединиться к раунду</button>
+            <button class="game-button" id="confirm-route-button" type="button" hidden disabled>Подтвердить маршрут</button>
+          </section>
+
+          <section class="leaderboard" aria-labelledby="leaderboard-title">
+            <div class="section-heading">
+              <h2 id="leaderboard-title">Таблица победителей</h2>
+              <span class="participant-count" id="participant-count">Участников: —</span>
+            </div>
+            <ol id="leaderboard-list" class="leaderboard-list">
+              <li class="leaderboard-empty">Загружаем рейтинг…</li>
+            </ol>
+          </section>
+        </aside>
+
+        <section class="map-panel" aria-label="Игровая карта">
+          <div class="map-toolbar">
+            <a class="brand map-brand" href="/" aria-label="Железная дорога — главная">
+              <!-- <span class="brand-mark" aria-hidden="true">🛤️</span> -->
+              <img src="/static/img/loco.jpg" height="25" width="60"> 
+              <span class="game-title">Железная дорога</span>
+            </a>
+            <p class="game-user">Игрок: <strong>{{ username }}</strong></p>
+            <span id="map-help">Выберите участки на карте</span>
+          </div>
+          <div class="map-scroll" id="map-scroll" tabindex="0" aria-label="Прокручиваемая карта">
+            <div class="map-canvas" id="map-canvas">
+              <img src="/static/img/map.svg" alt="" class="map-image" draggable="false">
+              <svg
+                class="map-overlay"
+                id="map-overlay"
+                width="4000"
+                height="3000"
+                viewBox="0 0 4000 3000"
+                role="img"
+                aria-label="Города и железнодорожные участки"
+              ></svg>
+              <svg
+                class="victory-train-overlay"
+                id="victory-train-overlay"
+                width="4000"
+                height="3000"
+                viewBox="0 0 4000 3000"
+                aria-hidden="true"
+              ></svg>
+            </div>
+          </div>
+          <p class="map-footnote">
+            Карту можно прокручивать. На телефоне проведите по ней в сторону.
+            <span class="map-legend" aria-label="Обозначения карты">
+              <span><i class="legend-dot legend-start"></i>Ваш город отправления</span>
+              <span><i class="legend-dot legend-target"></i>Ваш город назначения</span>
+              <span><i class="legend-line"></i>Выбранный участок</span>
+            </span>
+          </p>
+        </section>
+      </section>
+    </main>
+
+    <div class="victory-overlay" id="victory-overlay" role="status" aria-label="Поздравляем с победой" hidden>
+      <img src="/static/img/mazer.svg" alt="Кубок победителя" class="victory-trophy">
+      <img
+        src="/static/img/locomotive.gif"
+        alt=""
+        class="victory-locomotive"
+        aria-hidden="true"
+      >
+    </div>
+    <audio id="train-audio" src="/static/train.mp3" preload="auto"></audio>
+    <audio id="victory-audio" src="/static/victory.mp3" preload="auto"></audio>
+
+    <dialog class="word-dialog" id="word-dialog" aria-labelledby="word-dialog-title">
+      <form class="word-dialog-content" id="guess-form">
+        <div class="word-dialog-heading">
+          <div>
+            <p class="eyebrow">Слово кроссворда</p>
+            <h2 id="word-dialog-title">Определение</h2>
+          </div>
+          <button class="dialog-close" id="close-word-dialog" type="button" aria-label="Закрыть">×</button>
+        </div>
+        <p class="word-definition" id="word-definition"></p>
+        <p class="word-length" id="word-length"></p>
+        <label class="guess-label" for="word-answer">Ваш ответ</label>
+        <input
+          class="guess-input"
+          id="word-answer"
+          name="answer"
+          type="text"
+          maxlength="100"
+          autocomplete="off"
+          required
+        >
+        <button class="game-button" id="submit-guess" type="submit">Проверить ответ</button>
+        <p class="word-feedback" id="word-feedback" aria-live="polite"></p>
+        <div class="word-hints">
+          <p>Подсказки</p>
+          <div class="hint-buttons">
+            <button class="hint-button" id="first-letter-hint" type="button">Первая буква</button>
+            <button class="hint-button" id="last-letter-hint" type="button">Последняя буква</button>
+          </div>
+          <p class="hint-feedback" id="hint-feedback" aria-live="polite"></p>
+        </div>
+      </form>
+    </dialog> 
+
+    <div id="emojiBlock" class="hidden">👏</div>
+  </body>
+</html>

@@ -1,0 +1,27 @@
+# Окружение и секреты 
+.env
+
+# Папки Python
+__pycache__/
+*.py[cod]
+.venv/
+env/
+venv/
+logs/
+uploads/
+
+data/models_cache/*
+!data/models_cache/.gitkeep
+
+# Docker
+.dockerignore
+*.log
+package-lock.json
+package.json
+
+.vscode/
+.idea/
+
+# windtails
+node_modules/
+src/

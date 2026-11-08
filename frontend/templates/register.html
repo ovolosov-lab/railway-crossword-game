@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Регистрация — Железная дорога</title>
+    <link rel="stylesheet" href="/static/auth.css">
+    <script src="/static/register.js" defer></script>
+  </head>
+  <body>
+    <main class="auth-layout">
+      <section class="auth-card" aria-labelledby="register-title">
+        <a class="brand" href="/" aria-label="Железная дорога — главная">
+          <span class="brand-mark" aria-hidden="true">🛤️</span>
+          <span class="game-title">Железная дорога</span>
+        </a>
+
+        <div class="auth-heading">
+          <p class="eyebrow">Начните свой маршрут</p>
+          <h1 id="register-title">Создать аккаунт</h1>
+          <p class="intro">Зарегистрируйтесь, чтобы присоединиться к игре.</p>
+        </div>
+
+        <form id="register-form" class="auth-form" action="/auth/register/" method="post">
+          <label for="username">Имя пользователя</label>
+          <input
+            id="username"
+            name="username"
+            type="text"
+            autocomplete="username"
+            minlength="1"
+            maxlength="32"
+            required
+          >
+
+          <label for="email">Электронная почта</label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autocomplete="email"
+            inputmode="email"
+            maxlength="254"
+            placeholder="you@example.com"
+            required
+          >
+
+          <label for="password">Пароль</label>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="new-password"
+            minlength="8"
+            maxlength="72"
+            required
+          >
+
+          <label for="password-confirmation">Повторите пароль</label>
+          <input
+            id="password-confirmation"
+            name="password_confirmation"
+            type="password"
+            autocomplete="new-password"
+            minlength="8"
+            maxlength="72"
+            required
+          >
+
+          <p id="form-message" class="form-message" role="alert" aria-live="polite" hidden></p>
+
+          <button id="submit-button" class="submit-button" type="submit">
+            <span class="button-label">Зарегистрироваться</span>
+            <span class="button-spinner" aria-hidden="true"></span>
+          </button>
+        </form>
+
+        <p class="auth-footer">
+          Уже есть аккаунт?
+          <a href="/login/">Войти</a>
+        </p>
+      </section>
+
+      <aside class="auth-aside" aria-label="О игре">
+        <div class="route-illustration" aria-hidden="true">
+          <span class="city city-start"></span>
+          <span class="rail-line"></span>
+          <span class="city city-end"></span>
+        </div>
+        <p class="aside-kicker">Постройте свой путь</p>
+        <p class="aside-copy">Отгадывайте слова, соединяйте города и стройте свою железную дорогу.</p>
+      </aside>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Вход — Железная дорога</title>
+    <link rel="stylesheet" href="/static/auth.css">
+    <script src="/static/auth.js" defer></script>
+  </head>
+  <body>
+    <main class="auth-layout">
+      <section class="auth-card" aria-labelledby="login-title">
+        <a class="brand" href="/" aria-label="Железная дорога — главная">
+          <!--<span class="brand-mark" aria-hidden="true">🛤️</span>-->
+          <img src="/static/img/loco.jpg" height="50" width="120" alt="Железная дорога">
+          <span class="game-title">Железная дорога</span>
+        </a>
+
+        <div class="auth-heading">
+          <p class="eyebrow">Рады видеть вас снова</p>
+          <h1 id="login-title">Войти в игру</h1>
+          <p class="intro">Войдите, чтобы продолжить свой маршрут.</p>
+        </div>
+
+        <form id="login-form" class="auth-form" action="/auth/" method="post">
+          <label for="email">Электронная почта</label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autocomplete="email"
+            inputmode="email"
+            maxlength="254"
+            placeholder="you@example.com"
+            required
+          >
+
+          <div class="password-label">
+            <label for="password">Пароль</label>
+          </div>
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            maxlength="72"
+            required
+          >
+
+          <p id="form-message" class="form-message" role="alert" aria-live="polite" hidden></p>
+
+          <button id="submit-button" class="submit-button" type="submit">
+            <span class="button-label">Войти</span>
+            <span class="button-spinner" aria-hidden="true"></span>
+          </button>
+        </form>
+
+        <p class="auth-footer">
+          Ещё нет аккаунта?
+          <a href="/register/">Зарегистрироваться</a>
+        </p>
+      </section>
+
+      <aside class="auth-aside" aria-label="О игре">
+        <div class="route-illustration" aria-hidden="true">
+          <span class="city city-start"></span>
+          <span class="rail-line"></span>
+          <span class="city city-end"></span>
+        </div>
+        <p class="aside-kicker">Кроссворд на карте</p>
+        <p class="aside-copy">Отгадывайте слова, соединяйте города и стройте свою железную дорогу.</p>
+      </aside>
+    </main>
+  </body>
+</html>
