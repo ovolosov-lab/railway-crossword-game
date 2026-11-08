@@ -20,14 +20,14 @@ services:
       AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-access_token}
       CSRF_COOKIE_NAME: ${CSRF_COOKIE_NAME:-csrf_token}
       AUTH_COOKIE_SAMESITE: ${AUTH_COOKIE_SAMESITE:-lax}
-      GAME_DURATION_HOURS: ${GAME_DURATION_HOURS:-24}
+      GAME_DURATION_HOURS: ${GAME_DURATION_HOURS:-6}
       CHECK_INTERVAL: ${CHECK_INTERVAL:-40}
       USER_GUESS_RATE_LIMIT: ${USER_GUESS_RATE_LIMIT:-30}
       FRONTEND_SYNC_INTERVAL: ${FRONTEND_SYNC_INTERVAL:-2}
       HINT_FIRST_LETTER_COST: ${HINT_FIRST_LETTER_COST:-20}
       HINT_LAST_LETTER_COST: ${HINT_LAST_LETTER_COST:-30}
     ports:
-      - "127.0.0.1:${PORT:-8000}:${PORT:-8000}"
+      - "80:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -39,7 +39,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in the root .env file}
       POSTGRES_DB: ${DB_NAME:?Set DB_NAME in the root .env file}
     ports:
-      - "127.0.0.1:${DB_PORT:-5432}:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
