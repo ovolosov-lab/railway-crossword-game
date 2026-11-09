@@ -7,6 +7,7 @@
 
   const elements = {
     timer: document.getElementById("round-timer"),
+    timerBlock: document.getElementById("timer-block"),
     roundStatus: document.getElementById("round-status"),
     message: document.getElementById("game-message"),
     loading: document.getElementById("game-loading"),
@@ -18,6 +19,7 @@
     routeProgress: document.getElementById("route-progress"),
     joinButton: document.getElementById("join-button"),
     confirmButton: document.getElementById("confirm-route-button"),
+    playWithTrain: document.getElementById("play-with-train"),
     participantCount: document.getElementById("participant-count"),
     leaderboard: document.getElementById("leaderboard-list"),
     mapHelp: document.getElementById("map-help"),
@@ -576,6 +578,9 @@
     showMessage(result, player.state === "won" ? "victory" : "error");
     if (player.state === "won" && state.shouldCelebrateVictory) {
       state.shouldCelebrateVictory = false;
+      elements.timerBlock.classList.add("hidden");
+      elements.playWithTrain.classList.remove('hidden');
+      elements.playWithTrain.disabled = false;
       startVictoryCelebration();
     }
     void refreshLeaderboard();
@@ -604,12 +609,14 @@
     state.victoryAnimationActive = false;
   }
 
-  function finishVictoryTrain() {
+  function finishVictoryTrain(showTrophy) {
     state.victoryFrame = null;
     state.victoryAnimationActive = false;
     state.victoryCrossword = null;
     drawMap();
-    showVictoryTrophy();
+    if (showTrophy) {
+      showVictoryTrophy();
+    }
   }
 
   function positionVictoryImages() {
@@ -675,7 +682,7 @@
     }, 8000);
   }
 
-  function animateVictoryTrain() {
+  function animateVictoryTrain(showTrophy) {
     const cityPath = buildCityPath(
       state.player?.source_city_id,
       state.selectedRouteIds,
@@ -696,7 +703,7 @@
     }
     const mapScale = elements.mapOverlay.getBoundingClientRect().width / 4000;
     if (!segments.length || !mapScale) {
-      finishVictoryTrain();
+      finishVictoryTrain(showTrophy);
       return;
     }
 
@@ -742,7 +749,7 @@
         state.victoryFrame = window.requestAnimationFrame(moveTrain);
       } else {
         train.remove();
-        finishVictoryTrain();
+        finishVictoryTrain(showTrophy);
       }
     };
     state.victoryFrame = window.requestAnimationFrame(moveTrain);
@@ -758,13 +765,18 @@
         console.warn("Could not play the train sound.", error);
       });
     }
-    animateVictoryTrain();
+    animateVictoryTrain(true);
     playback = elements.victoryAudio.play();
     if (playback && typeof playback.catch === "function") {
       playback.catch((error) => {
         console.warn("Could not play the victory sound.", error);
       });
     }
+  }
+  
+  function startToyTrain() {
+    elements.trainAudio.play();
+    animateVictoryTrain(false);
   }
 
   async function refreshLeaderboard() {
@@ -1264,6 +1276,8 @@
   }
 
   async function joinGame() {
+    elements.playWithTrain.classList.add("hidden");
+    elements.timerBlock.classList.remove("hidden");
     elements.confirmButton.style.display = 'none';  
     elements.confirmButton.disabled = true;
     if (elements.joinButton.disabled || state.busy) return;
@@ -1405,6 +1419,7 @@
   elements.firstHint.addEventListener("click", () => requestHint("first_letter"));
   elements.lastHint.addEventListener("click", () => requestHint("last_letter"));
   elements.closeWordDialog.addEventListener("click", () => elements.wordDialog.close());
+  elements.playWithTrain.addEventListener("click", startToyTrain);
   elements.wordDialog.addEventListener("click", (event) => {
     if (event.target === elements.wordDialog) elements.wordDialog.close();
   });

@@ -22,7 +22,7 @@
           <h1 id="game-title" class="game-title">Разгадай кроссворд</h1>
           <p class="intro">Соедините начальный и конечный города непрерывной цепочкой железных дорог и разгадайте кроссворд.</p>
 
-          <div class="round-summary" aria-live="polite">
+          <div class="round-summary" aria-live="polite" id="timer-block">
             <div>
               <span class="summary-label">До конца раунда</span>
               <strong id="round-timer">Загрузка…</strong>
@@ -41,6 +41,7 @@
             <p class="route-progress" id="route-progress" hidden></p>
             <button class="game-button" id="join-button" type="button" hidden>Присоединиться к раунду</button>
             <button class="game-button" id="confirm-route-button" type="button" hidden disabled>Подтвердить маршрут</button>
+            <button class="game-button hidden" id="play-with-train" type="button" disabled>Хочу еще поезд!</button>
           </section>
 
           <section class="leaderboard" aria-labelledby="leaderboard-title">

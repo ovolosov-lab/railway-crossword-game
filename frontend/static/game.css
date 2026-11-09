@@ -1,5 +1,5 @@
 .hidden {
-   display: none;
+   display: none !important;
 }
 
 #emojiBlock {
@@ -152,6 +152,7 @@
 }
 
 .game-message[data-kind="victory"] {
+  margin-top: 30px;
   border-color: #e83e8c;
   color: #d41472;
   background: #fff0f7;
