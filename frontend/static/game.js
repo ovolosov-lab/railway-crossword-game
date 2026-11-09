@@ -715,7 +715,7 @@
       "aria-hidden": "true",
     });
     //train.textContent = "🚂";
-    train.textContent = "🚃";
+    train.textContent = "🚃🚃";
     elements.victoryTrainOverlay.replaceChildren(train);
 
     const totalLength = segments.reduce((sum, segment) => sum + segment.length, 0);
@@ -777,6 +777,10 @@
   function startToyTrain() {
     elements.trainAudio.play();
     animateVictoryTrain(false);
+    setTimeout(() => {
+      elements.trainAudio.pause();       
+      elements.trainAudio.currentTime = 0;
+    }, 4000); 
   }
 
   async function refreshLeaderboard() {
@@ -1408,7 +1412,7 @@
 
     setTimeout(() => {
         emojiBlock.classList.add('hidden');
-    }, 3000);
+    }, 2300);
   }
 
   elements.joinButton.addEventListener("click", joinGame);
