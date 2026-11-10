@@ -167,6 +167,7 @@
       state.terminalRoundId = null;
       state.guessBlockedUntil = null;
       state.activePlacementId = null;
+      hidePlayWithTrainButton();
       if (elements.wordDialog.open) elements.wordDialog.close();
     }
     state.round = { ...round };
@@ -178,6 +179,29 @@
     elements.roundStatus.textContent = statusLabels[round.status] || "Статус неизвестен";
     elements.roundStatus.dataset.state = round.status;
     updateTimer();
+  }
+
+  function hasWinningMap() {
+    const player = state.player;
+    const routeIds = player?.route_ids || [];
+    if (
+      player?.state !== "won"
+      || !cityById(player.source_city_id)
+      || !cityById(player.target_city_id)
+      || routeIds.length === 0
+      || !state.crossword.length
+    ) return false;
+
+    const cityPath = buildCityPath(player.source_city_id, routeIds);
+    return (
+      cityPath.length === routeIds.length + 1
+      && cityPath.at(-1) === player.target_city_id
+    );
+  }
+
+  function hidePlayWithTrainButton() {
+    elements.playWithTrain.classList.add("hidden");
+    elements.playWithTrain.disabled = true;
   }
 
   function updatePlayerScore() {
@@ -581,8 +605,12 @@
     if (player.state === "won" && state.shouldCelebrateVictory) {
       state.shouldCelebrateVictory = false;
       elements.timerBlock.classList.add("hidden");
-      elements.playWithTrain.classList.remove('hidden');
-      elements.playWithTrain.disabled = false;
+      if (hasWinningMap()) {
+        elements.playWithTrain.classList.remove("hidden");
+        elements.playWithTrain.disabled = false;
+      } else {
+        hidePlayWithTrainButton();
+      }
       startVictoryCelebration();
     }
     void refreshLeaderboard();
@@ -777,6 +805,10 @@
   }
   
   function startToyTrain() {
+    if (!hasWinningMap()) {
+      hidePlayWithTrainButton();
+      return;
+    }
     elements.trainAudio.play();
     animateVictoryTrain(false);
     setTimeout(() => {
@@ -853,6 +885,7 @@
     );
     state.crossword = snapshot.crossword;
     state.crosswordLoaded = true;
+    if (!hasWinningMap()) hidePlayWithTrainButton();
     if (elements.wordDialog.open && activePlacement()?.is_guessed) {
       elements.wordDialog.close();
       state.activePlacementId = null;
@@ -1285,7 +1318,7 @@
   }
 
   async function joinGame() {
-    elements.playWithTrain.classList.add("hidden");
+    hidePlayWithTrainButton();
     elements.timerBlock.classList.remove("hidden");
     elements.confirmButton.style.display = 'none';  
     elements.confirmButton.disabled = true;
@@ -1424,10 +1457,19 @@
   elements.confirmButton.addEventListener("click", confirmRoute);
   elements.mapOverlay.addEventListener("click", handleRouteClick);
   elements.mapOverlay.addEventListener("keydown", handleMapKeydown);
+  function applyMapScale() {
+    const selectedScale = elements.mapScaleControl.querySelector(
+      'input[name="map-scale"]:checked',
+    );
+    if (!selectedScale) return;
+    const mobileScale = window.matchMedia("(max-width: 900px)").matches
+      ? 0.85
+      : 1;
+    elements.mapCanvas.style.zoom = String(Number(selectedScale.value) * mobileScale);
+  }
+
   elements.mapScaleControl.addEventListener("change", (event) => {
-    if (event.target.name === "map-scale") {
-      elements.mapCanvas.style.zoom = event.target.value;
-    }
+    if (event.target.name === "map-scale") applyMapScale();
   });
   elements.guessForm.addEventListener("submit", submitGuess);
   elements.firstHint.addEventListener("click", () => requestHint("first_letter"));
@@ -1437,10 +1479,14 @@
   elements.wordDialog.addEventListener("click", (event) => {
     if (event.target === elements.wordDialog) elements.wordDialog.close();
   });
-  window.addEventListener("resize", positionVictoryImages);
+  window.addEventListener("resize", () => {
+    positionVictoryImages();
+    applyMapScale();
+  });
   window.addEventListener("scroll", positionVictoryImages, true);
   elements.confirmButton.style.display = 'none';
   elements.confirmButton.disabled = true;
+  applyMapScale();
   window.setInterval(updateTimer, 1000);
   startSyncPolling();
   loadGame();
