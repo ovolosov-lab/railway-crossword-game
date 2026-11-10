@@ -25,6 +25,8 @@
     mapHelp: document.getElementById("map-help"),
     gamePanel: document.querySelector(".game-panel"),
     mapScroll: document.getElementById("map-scroll"),
+    mapCanvas: document.getElementById("map-canvas"),
+    mapScaleControl: document.querySelector(".map-scale-control"),
     mapOverlay: document.getElementById("map-overlay"),
     victoryTrainOverlay: document.getElementById("victory-train-overlay"),
     victoryOverlay: document.getElementById("victory-overlay"),
@@ -822,6 +824,7 @@
       || !isCurrentRoundResponse(snapshot.round)
     ) return false;
 
+    console.log("applySyncSnapshot");
     updateRound(snapshot.round);
     const previousPlayer = state.player;
     const playerChanged = (
@@ -1068,6 +1071,7 @@
   }
 
   function updateRouteControls() {
+    console.log("updateRouteControls");
     const selecting = state.player?.state === "selecting_route";
     if (selecting) {
       elements.confirmButton.style.display = 'inline-flex';
@@ -1116,6 +1120,7 @@
   }
 
   function renderPlayer() {
+    console.log("renderPlayer");
     const player = state.player || { state: "watching_stats" };
     const states = {
       watching_stats: ["Статистика раунда", "Следите за временем и результатами игроков. Вы можете присоединиться, пока до конца больше минуты."],
@@ -1419,6 +1424,11 @@
   elements.confirmButton.addEventListener("click", confirmRoute);
   elements.mapOverlay.addEventListener("click", handleRouteClick);
   elements.mapOverlay.addEventListener("keydown", handleMapKeydown);
+  elements.mapScaleControl.addEventListener("change", (event) => {
+    if (event.target.name === "map-scale") {
+      elements.mapCanvas.style.zoom = event.target.value;
+    }
+  });
   elements.guessForm.addEventListener("submit", submitGuess);
   elements.firstHint.addEventListener("click", () => requestHint("first_letter"));
   elements.lastHint.addEventListener("click", () => requestHint("last_letter"));

@@ -146,6 +146,9 @@ class LoginPageTests(unittest.TestCase):
         self.assertIn('href="/static/game.css"', response.text)
         self.assertIn('src="/static/game.js"', response.text)
         self.assertIn('src="/static/img/map.svg"', response.text)
+        self.assertIn('class="map-scale-control"', response.text)
+        for scale in ("0.7", "0.85", "1"):
+            self.assertIn(f'name="map-scale" value="{scale}"', response.text)
         self.assertIn('class="brand map-brand"', response.text)
         self.assertIn('class="brand-mark" aria-hidden="true">🛤️</span>', response.text)
         self.assertIn('class="game-user">Игрок: <strong>map-player</strong>', response.text)
@@ -178,7 +181,7 @@ class LoginPageTests(unittest.TestCase):
         self.assertIn("activePlacement()?.is_guessed", script.text)
         self.assertIn("if (!placement || placement.is_guessed) return;", script.text)
         self.assertIn("function startVictoryCelebration()", script.text)
-        self.assertIn("function animateVictoryTrain()", script.text)
+        self.assertIn("function animateVictoryTrain(showTrophy)", script.text)
         self.assertIn("function showVictoryTrophy()", script.text)
         self.assertIn("function positionVictoryImages()", script.text)
         self.assertIn("elements.gamePanel.getBoundingClientRect()", script.text)

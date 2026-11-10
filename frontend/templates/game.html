@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-cookie-name" content="{{ csrf_cookie_name }}">
-    <title>Игра — Железная дорога</title>
+    <title>Игра — Железная дорога (чайнворд)</title>
     <link rel="stylesheet" href="/static/auth.css">
     <link rel="stylesheet" href="/static/game.css">
     <link rel="icon" href="/static/favicon.ico" sizes="any">
@@ -20,8 +20,8 @@
       <section class="game-layout" aria-labelledby="game-title">
         <aside class="game-panel">
           <p class="eyebrow">Игра для вечеринок</p>
-          <h1 id="game-title" class="game-title">Разгадай кроссворд</h1>
-          <p class="intro">Соедините начальный и конечный города непрерывной цепочкой железных дорог и разгадайте кроссворд.</p>
+          <h1 id="game-title" class="game-title">Разгадай чайнворд</h1>
+          <p class="intro">Соедините начальный и конечный города непрерывной цепочкой железных дорог и разгадайте чайнворд.</p>
 
           <div class="round-summary" aria-live="polite" id="timer-block">
             <div>
@@ -88,14 +88,20 @@
               ></svg>
             </div>
           </div>
-          <p class="map-footnote">
-            Карту можно прокручивать. На телефоне проведите по ней в сторону.
+          <div class="map-footnote">
+            <span class="map-scroll-hint">Карту можно прокручивать. На телефоне проведите по ней в сторону.</span>
             <span class="map-legend" aria-label="Обозначения карты">
               <span><i class="legend-dot legend-start"></i>Ваш город отправления</span>
               <span><i class="legend-dot legend-target"></i>Ваш город назначения</span>
               <span><i class="legend-line"></i>Выбранный участок</span>
             </span>
-          </p>
+            <fieldset class="map-scale-control">
+              <legend>Масштаб карты</legend>
+              <label><input type="radio" name="map-scale" value="0.7">70%</label>
+              <label><input type="radio" name="map-scale" value="0.85">85%</label>
+              <label><input type="radio" name="map-scale" value="1" checked>100%</label>
+            </fieldset>
+          </div>
         </section>
       </section>
     </main>
@@ -116,7 +122,7 @@
       <form class="word-dialog-content" id="guess-form">
         <div class="word-dialog-heading">
           <div>
-            <p class="eyebrow">Слово кроссворда</p>
+            <p class="eyebrow">Слово чайнворда</p>
             <h2 id="word-dialog-title">Определение</h2>
           </div>
           <button class="dialog-close" id="close-word-dialog" type="button" aria-label="Закрыть">×</button>

@@ -546,16 +546,22 @@
   pointer-events: stroke;
   cursor: pointer;
   filter: drop-shadow(0 0 5px rgb(52 42 204 / 72%));
+  stroke-dasharray: 20, 2;
+  stroke-linecap: butt;
 }
 
 .map-route.is-selected:hover,
 .map-route.is-selected:focus-visible {
   stroke: #3226c8;
+  stroke-dasharray: 20, 2;
+  stroke-linecap: butt;
 }
 
 .map-route.is-solved {
   stroke: #347e5a;
   opacity: 1;
+  stroke-dasharray: 20, 2;
+  stroke-linecap: butt;
 }
 
 .map-city {
@@ -596,10 +602,44 @@
 
 .map-footnote {
   display: flex;
-  gap: 40px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
   margin: 10px 4px 1px;
   color: #89958e;
   font-size: 11px;
+}
+
+.map-scale-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 0 auto;
+  padding: 0;
+  border: 0;
+  color: #64766d;
+  font-size: 11px;
+}
+
+.map-scale-control legend {
+  float: left;
+  margin-right: 8px;
+  padding: 0;
+  font-weight: 700;
+}
+
+.map-scale-control label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.map-scale-control input {
+  margin: 0;
+  accent-color: #347e5a;
 }
 
 .word-dialog {
@@ -842,6 +882,10 @@
 
   .map-legend {
     display: none;
+  }
+
+  .map-scale-control {
+    margin-left: auto;
   }
 }
 
