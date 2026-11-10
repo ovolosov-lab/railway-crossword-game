@@ -814,8 +814,17 @@
     min-width: 0;
   }
 
+  .leaderboard-list {
+    min-height: 150px;
+    max-height: 150px;
+  }  
+
+  .map-panel {
+    min-height: 95vh;
+  }
+
   .map-scroll {
-    max-height: 65vh;
+    max-height: calc(90vh - 40px);
   }
 
   .map-canvas {
@@ -837,8 +846,16 @@
 
 @media (max-width: 570px) {
   .game-shell {
-    width: calc(100% - 18px);
+    width: calc(100% - 10px);
     padding-top: 8px;
+  }
+
+  .game-layout {
+    gap: 12px;
+  }  
+
+  .map-scroll {
+        max-height: calc(90vh - 90px);
   }
 
   .map-brand {
@@ -864,16 +881,16 @@
   }
 
   #map-help {
-    max-width: 100px;
-    font-size: 10px;
+    display: none;
   }
 
   .game-panel {
-    padding: 20px;
+    padding: 10px;
   }
 
   .map-panel {
     padding: 8px;
+    min-height: 90vh;
   }
 
   .map-toolbar {
