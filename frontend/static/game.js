@@ -1114,10 +1114,10 @@
     elements.confirmButton.disabled = !canConfirmRoute();
     if (!selecting) {
       elements.mapHelp.textContent = state.player?.state === "playing"
-        ? "Нажмите на клетки слова"
+        ? "Кликните на клетки чайнворда"
         : ["won", "lost"].includes(state.player?.state)
           ? "Раунд завершён"
-        : "Карта доступна для просмотра";
+        : "Режим просмотра";
       elements.routeProgress.hidden = true;
       return;
     }
@@ -1156,11 +1156,11 @@
     console.log("renderPlayer");
     const player = state.player || { state: "watching_stats" };
     const states = {
-      watching_stats: ["Статистика раунда", "Следите за временем и результатами игроков. Вы можете присоединиться, пока до конца больше минуты."],
+      watching_stats: ["Перед началом", "Следите за временем - раунд длится не более 6 часов. Вы можете присоединиться, пока до конца раунда больше минуты. Как только один из игроков успешно завершает свой чайнворд - раунд завершается. Сразу же стартует новый раунд."],
       selecting_route: ["Выбор маршрута", "Выберите непрерывную цепочку участков от города отправления до города назначения."],
-      playing: ["Кроссворд", "Нажмите на клетки участка, чтобы открыть описание, ввести ответ или запросить подсказку."],
-      won: ["Раунд завершён", "Вы победили. Результат и очки сохранены."],
-      lost: ["Раунд завершён", "Другой игрок завершил раунд первым. Результат сохранён."],
+      playing: ["Игра стартовала", "Кликните на клетке чайнворда, чтобы открыть описание и ввести ответ."],
+      won: ["Раунд завершён", "Вы победили. Очки сохранены."],
+      lost: ["Раунд завершён", "Другой игрок завершил раунд первым. В следующий раз повезет вам!"],
     };
     const [heading, description] = states[player.state] || states.watching_stats;
     elements.playerHeading.textContent = heading;
@@ -1319,6 +1319,7 @@
 
   async function joinGame() {
     hidePlayWithTrainButton();
+    elements.leaderboard.classList.add("hidden");
     elements.timerBlock.classList.remove("hidden");
     elements.confirmButton.style.display = 'none';  
     elements.confirmButton.disabled = true;
@@ -1367,6 +1368,7 @@
     elements.confirmButton.style.display = 'none';  
     elements.confirmButton.disabled = true;
     elements.confirmButton.hidden = true;
+    elements.leaderboard.classList.remove("hidden");
     clearMessage();
     try {
       const result = await apiRequest("/game/route/", {
