@@ -1380,7 +1380,7 @@
       });
       if (result.round.id !== state.round.id) {
         state.retryRouteIds = null;
-        showMessage("Ответ относится к другому раунду и не был применён. Обновите страницу.");
+        showMessage("Ответ относится к завершённому раунду и не был применён. Обновите страницу.");
         await loadGame();
         return;
       }
