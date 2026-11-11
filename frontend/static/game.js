@@ -598,7 +598,7 @@
       : round.finish_reason === "timeout"
         ? "Время раунда истекло. Победителя нет."
         : "Раунд завершён победой другого игрока.";
-    console.log(player.state);
+    // console.log(player.state);
     elements.assignedCities.hidden = true; 
     elements.assignedCities.replaceChildren();       
     showMessage(result, player.state === "won" ? "victory" : "error");
@@ -856,7 +856,7 @@
       || !isCurrentRoundResponse(snapshot.round)
     ) return false;
 
-    console.log("applySyncSnapshot");
+    // console.log("applySyncSnapshot");
     updateRound(snapshot.round);
     const previousPlayer = state.player;
     const playerChanged = (
@@ -1104,7 +1104,7 @@
   }
 
   function updateRouteControls() {
-    console.log("updateRouteControls");
+    // console.log("updateRouteControls");
     const selecting = state.player?.state === "selecting_route";
     if (selecting) {
       elements.confirmButton.style.display = 'inline-flex';
@@ -1153,13 +1153,13 @@
   }
 
   function renderPlayer() {
-    console.log("renderPlayer");
+    // console.log("renderPlayer");
     const player = state.player || { state: "watching_stats" };
     const states = {
-      watching_stats: ["Перед началом", "Следите за временем - раунд длится не более 6 часов. Вы можете присоединиться, пока до конца раунда больше минуты. Как только один из игроков успешно завершает свой чайнворд - раунд завершается. Сразу же стартует новый раунд."],
+      watching_stats: ["Перед началом", "Следите за временем - раунд длится не более 6 часов. Как только один из игроков успешно завершает свой чайнворд - раунд завершается. Сразу же стартует новый раунд."],
       selecting_route: ["Выбор маршрута", "Выберите непрерывную цепочку участков от города отправления до города назначения."],
       playing: ["Игра стартовала", "Кликните на клетке чайнворда, чтобы открыть описание и ввести ответ."],
-      won: ["Раунд завершён", "Вы победили. Очки сохранены."],
+      won: ["Раунд завершён", ""],
       lost: ["Раунд завершён", "Другой игрок завершил раунд первым. В следующий раз повезет вам!"],
     };
     const [heading, description] = states[player.state] || states.watching_stats;
@@ -1467,7 +1467,7 @@
     const mobileScale = window.matchMedia("(max-width: 900px)").matches
       ? 0.85
       : 1;
-    elements.mapCanvas.style.zoom = String(Number(selectedScale.value) * mobileScale);
+    elements.mapCanvas.style.zoom = String(Number(selectedScale.value) * mobileScale); 
   }
 
   elements.mapScaleControl.addEventListener("change", (event) => {
