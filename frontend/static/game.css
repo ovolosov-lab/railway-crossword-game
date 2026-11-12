@@ -278,14 +278,21 @@
   white-space: nowrap;
 }
 
+.leaderboard-div {
+    margin-top: 12px;
+    background-color: #00b4ef;
+    border: 1px inset #d4d2d4;
+    border-radius: 10px;
+    padding: 0 10px 0 0;
+    overflow: hidden;
+}
+
 .leaderboard-list {
     display: block;
     padding: 0;
     list-style-position: inside;
     background-color: #00b4ef;
-    border-radius: 10px;
-    border: 1px solid #d7d4d7;
-    list-style-type: circle;
+    list-style-type: "★  ";
     min-height: 130px;
     max-height: 130px;
     overflow-y: auto;
@@ -293,7 +300,7 @@
     scrollbar-width: thin;
     padding-top: 10px;
     padding-bottom: 10px;
-    margin-bottom: 0;
+    margin: 0;
 }
 
 .leaderboard-list li {
@@ -304,11 +311,17 @@
     font-size: 15px;
 }
 
+.leaderboard-list li::marker {
+  color: #ffc107; 
+  font-size: 1.1em; 
+}
+
 .leaderboard-row {
   display: inline-flex;
   width: calc(100% - 27px);
   justify-content: space-between;
   gap: 8px;
+  padding-left:5px;
 }
 
 .leaderboard-score {
@@ -894,6 +907,7 @@
 
   .game-panel {
     padding: 10px;
+    min-height: 50px;
   }
 
   .map-panel {
