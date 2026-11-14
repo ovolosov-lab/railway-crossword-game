@@ -77,6 +77,45 @@
   const numberFormat = new Intl.NumberFormat("ru-RU");
   let clickX = '35%';
   let clickY = '10%';
+  let popupTimer = null;
+  let popupElement = null;
+
+  function showPopUpBlock(message, duration) {
+    if (!popupElement) {
+      popupElement = document.createElement("div");
+      popupElement.className = "game-popup-block";
+      popupElement.setAttribute("role", "status");
+      popupElement.setAttribute("aria-live", "polite");
+      Object.assign(popupElement.style, {
+        position: "fixed",
+        top: "50%",
+        left: "50%",
+        transform: "translate(-50%, -50%)",
+        zIndex: "10000",
+        boxSizing: "border-box",
+        width: "max-content",
+        maxWidth: "calc(100vw - 32px)",
+        padding: "20px 24px",
+        borderRadius: "12px",
+        background: "#fff",
+        color: "#222",
+        boxShadow: "0 8px 32px rgba(0, 0, 0, 0.3)",
+        textAlign: "center",
+        overflowWrap: "anywhere",
+        pointerEvents: "none",
+      });
+      popupElement.hidden = true;
+      document.body.appendChild(popupElement);
+    }
+
+    if (popupTimer !== null) window.clearTimeout(popupTimer);
+    popupElement.textContent = String(message);
+    popupElement.hidden = false;
+    popupTimer = window.setTimeout(() => {
+      popupElement.hidden = true;
+      popupTimer = null;
+    }, Math.max(0, Number(duration) || 0));
+  }
 
   function showMessage(message, kind = "error") {
     elements.message.innerHTML = message;
@@ -241,6 +280,7 @@
       const score = document.createElement("span");
       content.className = "leaderboard-row";
       score.className = "leaderboard-score";
+      username.className = "leaderboard-username";
       username.textContent = row.username;
       score.textContent = numberFormat.format(row.score);
       content.append(username, score);
@@ -600,7 +640,7 @@
       ? "Поздравляем! Вы победили!"
       : round.finish_reason === "timeout"
         ? "Время раунда истекло. Победителя нет."
-        : "Раунд завершён победой другого игрока.";
+        : "Раунд завершён победой другого игрока 😔";
     // console.log(player.state);
     elements.assignedCities.hidden = true; 
     elements.assignedCities.replaceChildren();       
@@ -615,7 +655,10 @@
         hidePlayWithTrainButton();
       }
       startVictoryCelebration();
-    }
+    } else if ((player.state !== "won") && (round.finish_reason !== "timeout")) {
+        showPopUpBlock("К сожалению, в этом раунде победил другой игрок 😔", 4000);
+    } 
+
     void refreshLeaderboard();
   }
 

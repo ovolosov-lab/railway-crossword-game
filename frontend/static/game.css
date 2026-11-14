@@ -311,6 +311,11 @@
     font-size: 15px;
 }
 
+.leaderboard-username {
+  max-width: 150px;
+  overflow: hidden;
+} 
+
 .leaderboard-list li::marker {
   color: #ffc107; 
   font-size: 1.1em; 
@@ -815,7 +820,7 @@
   .map-scroll {
     max-height: calc(100% - 150px);
   }
-  .liderboard-list {
+  .leaderboard-list {
     min-height: 110px;
     max-height: 110px;
   }

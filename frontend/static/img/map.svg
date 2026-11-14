@@ -169,40 +169,40 @@
   <circle class="st3" cx="3802.3" cy="1784.4" r="10"/>
   <circle class="st3" cx="465.2" cy="1224.4" r="5"/>
   <image width="1536" height="1024" transform="translate(1070.3898 1873.2167) scale(.1042)" xlink:href="/static/img/bern.png"/>
-  <image width="1536" height="1024" transform="translate(829.8881 1611.2334) scale(.1107)" xlink:href="/static/img/paris.png"/>
+  <image width="1536" height="1024" transform="translate(789 1567.5333) scale(.1107)" xlink:href="/static/img/paris.png"/>
   <image width="1536" height="1024" transform="translate(1785.2 1183.7334) scale(.1107)" xlink:href="/static/img/warsaw.png"/>
-  <image width="1536" height="1024" transform="translate(774.2 1275.0667) scale(.1103)" xlink:href="/static/img/london.png"/>
+  <image width="1536" height="1024" transform="translate(778.9298 1277.5532) scale(.1103)" xlink:href="/static/img/london.png"/>
   <image width="1536" height="1024" transform="translate(382.2372 1111.7582) scale(.1015)" xlink:href="/static/img/dublin.png"/>
   <image width="1536" height="1024" transform="translate(74.2934 2440.7332) scale(.1107)" xlink:href="/static/img/lisabon.png"/>
-  <image width="1536" height="1024" transform="translate(342.4043 2367.7589) scale(.1107)" xlink:href="/static/img/madrid.png"/>
+  <image width="1536" height="1024" transform="translate(322.4043 2367.7589) scale(.1107)" xlink:href="/static/img/madrid.png"/>
   <image width="1536" height="1024" transform="translate(1667.3159 2440.7332) scale(.1107)" xlink:href="/static/img/rim.png"/>
   <image width="1536" height="1024" transform="translate(2010.8 2460.7332) scale(.1107)" xlink:href="/static/img/tirana.png"/>
   <image width="1536" height="1024" transform="translate(2287.1998 2142.6666) scale(.1107)" xlink:href="/static/img/sofia.png"/>
-  <image width="1536" height="1024" transform="translate(2247.3404 2626.6525) scale(.1107)" xlink:href="/static/img/afines.png"/>
-  <image width="1536" height="1024" transform="translate(2849.766 2247.5035) scale(.1107)" xlink:href="/static/img/ankara.png"/>
-  <image width="1536" height="1024" transform="translate(3052.2149 1658.7248) scale(.1107)" xlink:href="/static/img/sochi.png"/>
-  <image width="1536" height="1024" transform="translate(3647.8511 1652.8666) scale(.1107)" xlink:href="/static/img/baku.png"/>
+  <image width="1536" height="1024" transform="translate(2115.8 2728.7801) scale(.1107)" xlink:href="/static/img/afines.png"/>
+  <image width="1536" height="1024" transform="translate(2850.766 2384.0666) scale(.1107)" xlink:href="/static/img/ankara.png"/>
+  <image width="1536" height="1024" transform="translate(2959.766 1715.3915) scale(.1107)" xlink:href="/static/img/sochi.png"/>
+  <image width="1536" height="1024" transform="translate(3647.8511 1727.8666) scale(.1107)" xlink:href="/static/img/baku.png"/>
   <image width="1536" height="1024" transform="translate(2172.8255 345.0944) scale(.1107)" xlink:href="/static/img/peterburg.png"/>
-  <image width="1536" height="1024" transform="translate(2784.2797 582.8199) scale(.1107)" xlink:href="/static/img/moscow.png"/>
-  <image width="1536" height="1024" transform="translate(2230.7771 1039.7666) scale(.1107)" xlink:href="/static/img/minsk.png"/>
+  <image width="1536" height="1024" transform="translate(2734.2797 572.8199) scale(.1107)" xlink:href="/static/img/moscow.png"/>
+  <image width="1536" height="1024" transform="translate(2085.8255 1029.4688) scale(.1107)" xlink:href="/static/img/minsk.png"/>
   <image width="1536" height="1024" transform="translate(2362.775 1331.3833) scale(.1107)" xlink:href="/static/img/kiev.png"/>
   <image width="1536" height="1024" transform="translate(2241.0996 1970.733) scale(.1107)" xlink:href="/static/img/buharest.png"/>
-  <image width="1536" height="1024" transform="translate(1870 927.8514) scale(.1107)" xlink:href="/static/img/vilnus.png"/>
+  <image width="1536" height="1024" transform="translate(1860 907.8514) scale(.1107)" xlink:href="/static/img/vilnus.png"/>
   <image width="1536" height="1024" transform="translate(2050.6007 762.7012) scale(.1107)" xlink:href="/static/img/riga.png"/>
-  <image width="1536" height="1024" transform="translate(2010.9002 526.9292) scale(.1107)" xlink:href="/static/img/tallin.png"/>
+  <image width="1536" height="1024" transform="translate(2010.9002 556.9292) scale(.1107)" xlink:href="/static/img/tallin.png"/>
   <image width="1536" height="1024" transform="translate(1820.1707 321.1918) scale(.1107)" xlink:href="/static/img/helsinki.png"/>
   <image width="1536" height="1024" transform="translate(1129.4 504.862) scale(.1107)" xlink:href="/static/img/oslo.png"/>
   <image width="1536" height="1024" transform="translate(1568.2021 493.9319) scale(.1107)" xlink:href="/static/img/stokgolm.png"/>
   <image width="1536" height="1024" transform="translate(1301.9682 939.2061) scale(.1107)" xlink:href="/static/img/kopengagen.png"/>
   <image width="1536" height="1024" transform="translate(1073.1378 1196.7302) scale(.1107)" xlink:href="/static/img/amsterdam.png"/>
   <image width="1536" height="1024" transform="translate(1064.766 1657.9) scale(.091)" xlink:href="/static/img/luxemburg.png"/>
-  <image width="1536" height="1024" transform="translate(1451.3409 1625.1699) scale(.1042)" xlink:href="/static/img/praga.png"/>
+  <image width="1536" height="1024" transform="translate(1446.1 1518.6356) scale(.1042)" xlink:href="/static/img/praga.png"/>
   <image width="1536" height="1024" transform="translate(1708.8279 1672.6426) scale(.1014)" xlink:href="/static/img/vienna.png"/>
-  <image width="1536" height="1024" transform="translate(1844.9127 1767.6752) scale(.1042)" xlink:href="/static/img/budapest.png"/>
+  <image width="1536" height="1024" transform="translate(1875.2 1816.7419) scale(.1042)" xlink:href="/static/img/budapest.png"/>
   <image width="1536" height="1024" transform="translate(1551.0787 2056.1844) scale(.1107)" xlink:href="/static/img/zagreb.png"/>
-  <image width="1536" height="1024" transform="translate(1962.087 1995.9334) scale(.1107)" xlink:href="/static/img/belgrad.png"/>
+  <image width="1536" height="1024" transform="translate(1785.2 2086.3333) scale(.1107)" xlink:href="/static/img/belgrad.png"/>
   <image width="1536" height="1024" transform="translate(677 738.9) scale(.1)" xlink:href="/static/img/edinburg.png"/>
-  <image width="1536" height="1024" transform="translate(1329.3129 1293.4) scale(.1074)" xlink:href="/static/img/berlin.png"/>
-  <image width="1536" height="1024" transform="translate(3139.7149 547.1) scale(.1074)" xlink:href="/static/img/kazan.png"/>
-  <image width="1536" height="1024" transform="translate(3269.5319 788.4057) scale(.093)" xlink:href="/static/img/samara.png"/>  
+  <image width="1536" height="1024" transform="translate(1423.6 1374.7) scale(.1074)" xlink:href="/static/img/berlin.png"/>
+  <image width="1536" height="1024" transform="translate(3132.2149 532.1) scale(.1074)" xlink:href="/static/img/kazan.png"/>
+  <image width="1536" height="1024" transform="translate(3280.9234 756) scale(.093)" xlink:href="/static/img/samara.png"/>  
 </svg>
