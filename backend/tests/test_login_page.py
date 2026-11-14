@@ -145,7 +145,8 @@ class LoginPageTests(unittest.TestCase):
         self.assertIn("map-player", response.text)
         self.assertIn('href="/static/game.css"', response.text)
         self.assertIn('src="/static/game.js"', response.text)
-        self.assertIn('src="/static/img/map.svg"', response.text)
+        self.assertIn('id="Layer_1" class="map-image"', response.text)
+        self.assertNotIn('src="/static/img/map.svg"', response.text)
         self.assertIn('class="map-scale-control"', response.text)
         for scale in ("0.7", "0.85", "1"):
             self.assertIn(f'name="map-scale" value="{scale}"', response.text)

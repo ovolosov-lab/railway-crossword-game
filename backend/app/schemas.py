@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import unicodedata
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Annotated, Literal
@@ -107,6 +108,33 @@ class DictionaryWordCreate(Schema):
         if isinstance(value, str):
             return value.strip()
         return value
+
+
+class DictionaryImportWord(Schema):
+    word: str = Field(min_length=1, max_length=100)
+    description: str = Field(min_length=1)
+
+    @field_validator("word", mode="before")
+    @classmethod
+    def normalize_word(cls, value: object) -> object:
+        if isinstance(value, str):
+            return unicodedata.normalize("NFC", value.strip())
+        return value
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def strip_description(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+
+class DictionaryImportRequest(Schema):
+    dictionary: list[DictionaryImportWord] = Field(min_length=1)
+
+
+class DictionaryImportResponse(Schema):
+    added: Annotated[int, Field(ge=0)]
 
 
 class DictionaryWordClue(Schema):

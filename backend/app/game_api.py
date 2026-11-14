@@ -281,7 +281,7 @@ async def get_game_stats(
         )
         leaderboard_rows = await session.execute(
             select(User.username, User.score)
-            .where(winner_exists)
+            .where(winner_exists, User.username != "test")
             .order_by(User.score.desc(), User.username.asc(), User.id.asc())
         )
     except SQLAlchemyError as exc:

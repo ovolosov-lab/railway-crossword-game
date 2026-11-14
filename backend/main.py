@@ -18,9 +18,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
+from app.admin_api import router as admin_router
+from app.api_errors import api_exception_handler, request_validation_exception_handler
 from app.config import Settings, get_settings
 from app.database import engine, get_db
-from app.api_errors import api_exception_handler, request_validation_exception_handler
 from app.auth import router as auth_router
 from app.game_api import router as game_router, write_router as game_write_router
 from app.game_state import ActiveGame, GameFinishedError, PrevGame
@@ -114,10 +115,16 @@ app = FastAPI(
     },
 )
 app.include_router(auth_router)
+app.include_router(admin_router)
 app.include_router(game_router)
 app.include_router(game_write_router)
 project_root = Path(__file__).resolve().parents[1]
-templates = Jinja2Templates(directory=project_root / "frontend" / "templates")
+templates = Jinja2Templates(
+    directory=[
+        project_root / "frontend" / "templates",
+        project_root / "frontend" / "static" / "img",
+    ]
+)
 app.mount(
     "/static",
     StaticFiles(directory=project_root / "frontend" / "static"),

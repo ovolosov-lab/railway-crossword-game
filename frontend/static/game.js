@@ -519,7 +519,10 @@
       ? "Слово разгадано"
       : "Определение";
     elements.wordDefinition.textContent = placement.definition;
-    elements.wordLength.textContent = `Клеток: ${placement.letter_count}`;
+
+    const ending = placement.letter_count < 5 ? "ы" : "";
+
+    elements.wordLength.textContent = `В слове ${placement.letter_count} букв${ending}.`;
     elements.answer.disabled = (
       placement.is_guessed
       || state.player?.state !== "playing"
