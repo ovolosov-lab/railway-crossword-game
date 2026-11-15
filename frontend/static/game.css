@@ -414,12 +414,21 @@
 .map-scroll {
   max-height: calc(100vh - 120px);
   overflow: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
   border: 1px solid #e2e8de;
   border-radius: 12px;
   background: #e9f2e9;
   scrollbar-color: #a7b9aa #edf2eb;
   scrollbar-width: thin;
+}
+
+.map-scroll.is-panning {
+  cursor: grabbing;
+  user-select: none; 
+}
+
+.map-scroll.can-pan {
+  cursor: grab;
 }
 
 .map-canvas {

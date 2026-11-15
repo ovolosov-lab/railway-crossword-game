@@ -437,6 +437,7 @@
   }
 
   function handleRouteClick(event) {
+    if (event.ctrlKey) return;
     const clickedPlacement = event.target.closest("[data-placement-id]");
 
     if (clickedPlacement) {
@@ -1505,6 +1506,7 @@
   elements.confirmButton.addEventListener("click", confirmRoute);
   elements.mapOverlay.addEventListener("click", handleRouteClick);
   elements.mapOverlay.addEventListener("keydown", handleMapKeydown);
+
   function applyMapScale() {
     const selectedScale = elements.mapScaleControl.querySelector(
       'input[name="map-scale"]:checked',
@@ -1514,6 +1516,55 @@
       ? 0.85
       : 1;
     elements.mapCanvas.style.zoom = String(Number(selectedScale.value) * mobileScale); 
+  }
+
+  // Отрабатываем событие перетаскивания мышкой с нажатым контролом
+  function initMapPanning() {
+    let isPanning = false;
+    let startX = 0;
+    let startY = 0;
+    let initialScrollLeft = 0;
+    let initialScrollTop = 0;
+
+    elements.mapScroll.addEventListener('mousedown', (e) => {
+      if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        isPanning = true;
+        elements.mapScroll.classList.add('is-panning');
+
+        startX = e.clientX;
+        startY = e.clientY;
+        initialScrollLeft = elements.mapScroll.scrollLeft;
+        initialScrollTop = elements.mapScroll.scrollTop;
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isPanning) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      elements.mapScroll.scrollLeft = initialScrollLeft - dx;
+      elements.mapScroll.scrollTop = initialScrollTop - dy;
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isPanning) {
+        isPanning = false;
+        elements.mapScroll.classList.remove('is-panning');
+      }
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Control' || e.key === 'Meta') {
+        elements.mapScroll.classList.add('can-pan');
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'Control' || e.key === 'Meta') {
+        elements.mapScroll.classList.remove('can-pan');
+      }
+    });
   }
 
   elements.mapScaleControl.addEventListener("change", (event) => {
@@ -1534,6 +1585,7 @@
   window.addEventListener("scroll", positionVictoryImages, true);
   elements.confirmButton.style.display = 'none';
   elements.confirmButton.disabled = true;
+  initMapPanning();  
   applyMapScale();
   window.setInterval(updateTimer, 1000);
   startSyncPolling();
