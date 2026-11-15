@@ -36,6 +36,8 @@ from app.schemas import (
     CityRead,
     CrosswordPlacementResponse,
     GameJoinResponse,
+    GameAutoRouteRequest,
+    GameAutoRouteResponse,
     GameGuessRequest,
     GameGuessResponse,
     GameHintRequest,
@@ -139,6 +141,53 @@ def _state_error(
         round_projection=round_projection.model_dump(mode="json"),
         player_projection=player_projection.model_dump(mode="json"),
     )
+
+
+def _random_simple_route_path(
+    routes: list[Route],
+    source_city_id: int,
+    target_city_id: int,
+) -> list[int] | None:
+    """Find a randomized simple path using only routes that can host a word."""
+    adjacency: dict[int, list[tuple[int, int]]] = {}
+    minimum_route_length = CROSSWORD_ENDPOINT_RESERVED_CELLS + 3
+    for route in routes:
+        if route.length_in_letters < minimum_route_length:
+            continue
+        adjacency.setdefault(route.source_city_id, []).append(
+            (route.id, route.target_city_id)
+        )
+        adjacency.setdefault(route.target_city_id, []).append(
+            (route.id, route.source_city_id)
+        )
+
+    randomizer = secrets.SystemRandom()
+    for edges in adjacency.values():
+        randomizer.shuffle(edges)
+
+    visited_city_ids = {source_city_id}
+    route_ids: list[int] = []
+    stack = [(source_city_id, iter(adjacency.get(source_city_id, [])))]
+    while stack:
+        city_id, edges = stack[-1]
+        try:
+            route_id, next_city_id = next(edges)
+        except StopIteration:
+            stack.pop()
+            if route_ids:
+                route_ids.pop()
+            continue
+        if next_city_id in visited_city_ids:
+            continue
+
+        route_ids.append(route_id)
+        if next_city_id == target_city_id:
+            return route_ids
+
+        visited_city_ids.add(next_city_id)
+        stack.append((next_city_id, iter(adjacency.get(next_city_id, []))))
+
+    return None
 
 
 def _guess_rate_limit(
@@ -580,6 +629,109 @@ async def join_game(
         return GameJoinResponse(
             round=_round_projection(game, now),
             player=_player_projection(game, user.id),
+        )
+
+
+@write_router.post("/route/auto/", response_model=GameAutoRouteResponse)
+async def auto_game_route(
+    request: Request,
+    payload: GameAutoRouteRequest,
+    user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> GameAutoRouteResponse:
+    application_lock: asyncio.Lock | None = getattr(
+        request.app.state,
+        "game_lock",
+        None,
+    )
+    if application_lock is None:
+        logger.error(
+            "Cannot create automatic route: application game lock is unavailable"
+        )
+        raise _state_error(
+            code="service_unavailable",
+            message="Game state is temporarily unavailable.",
+            round_projection=_round_projection(
+                getattr(request.app.state, "activeGame", None),
+                datetime.now(timezone.utc),
+            ),
+            player_projection=PlayerProjection(state="watching_stats"),
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    async with application_lock:
+        game: ActiveGame | None = getattr(request.app.state, "activeGame", None)
+        now = datetime.now(timezone.utc)
+        if game is None:
+            raise _state_error(
+                code="round_unavailable",
+                message="There is no active round.",
+                round_projection=_round_projection(None, now),
+                player_projection=PlayerProjection(state="watching_stats"),
+            )
+
+        if payload.round_id != game.game_id:
+            raise _state_error(
+                code="round_id_mismatch",
+                message="The request belongs to a different round.",
+                round_projection=_round_projection(game, now),
+                player_projection=_player_projection(game, user.id),
+            )
+
+        if game.status == "active" and now >= game.expires_at:
+            await game.finish_timeout(now=now)
+
+        player = game.players.get(user.id)
+        if game.status != "active":
+            raise _state_error(
+                code="round_not_active",
+                message="The round no longer accepts route selections.",
+                round_projection=_round_projection(game, now),
+                player_projection=_player_projection(game, user.id),
+            )
+        if player is None:
+            raise _state_error(
+                code="player_not_joined",
+                message="Join the active round before selecting a route.",
+                round_projection=_round_projection(game, now),
+                player_projection=PlayerProjection(state="watching_stats"),
+            )
+        if player.chosen_route_ids:
+            raise _state_error(
+                code="route_already_confirmed",
+                message="A confirmed route cannot be replaced.",
+                round_projection=_round_projection(game, now),
+                player_projection=_player_projection(game, user.id),
+            )
+
+        try:
+            route_result = await session.scalars(select(Route).order_by(Route.id))
+            routes = list(route_result.all())
+        except SQLAlchemyError as exc:
+            logger.exception("Could not load route catalog for automatic route")
+            raise ApiException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="service_unavailable",
+                message="Route data is temporarily unavailable.",
+            ) from exc
+
+        route_ids = _random_simple_route_path(
+            routes,
+            player.start_city_id,
+            player.end_city_id,
+        )
+        if route_ids is None:
+            raise _state_error(
+                code="route_not_connected",
+                message="No usable route connects the assigned cities.",
+                round_projection=_round_projection(game, now),
+                player_projection=_player_projection(game, user.id),
+            )
+
+        return GameAutoRouteResponse(
+            round=_round_projection(game, now),
+            player=_player_projection(game, user.id),
+            route_ids=route_ids,
         )
 
 

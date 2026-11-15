@@ -17,6 +17,8 @@
     playerScore: document.getElementById("player-score"),
     assignedCities: document.getElementById("assigned-cities"),
     routeProgress: document.getElementById("route-progress"),
+    routeProgressText: document.getElementById("route-progress-text"),
+    autoRouteButton: document.getElementById("auto-route-button"),
     joinButton: document.getElementById("join-button"),
     confirmButton: document.getElementById("confirm-route-button"),
     playWithTrain: document.getElementById("play-with-train"),
@@ -1013,6 +1015,8 @@
         setFeedback(elements.hintFeedback, "Для этого слова такая подсказка недоступна.", "error");
       } else {
         const values = state.hintValues.get(placement.placement_id) || {};
+        if (hintType == "first_letter") { elements.answer.placeholder = response.hint.value + elements.answer.placeholder.slice(1); } 
+        else { elements.answer.placeholder = elements.answer.placeholder.slice(0, -1) + response.hint.value; }
         values[hintType] = response.hint.value;
         state.hintValues.set(placement.placement_id, values);
         const charge = response.hint.points_charged
@@ -1175,9 +1179,11 @@
       ? "Путь достиг города назначения"
       : "Выбирайте соседний участок";
     elements.routeProgress.hidden = false;
-    elements.routeProgress.textContent = reachesTarget
+    elements.routeProgressText.textContent = reachesTarget
       ? `Путь готов: ${selectedCount} ${selectedCount === 1 ? "участок" : "участка"}. Можно подтвердить маршрут.`
       : `Выбрано участков: ${selectedCount}. Проложите непрерывный путь до города назначения.`;
+    elements.autoRouteButton.hidden = reachesTarget;
+    elements.autoRouteButton.disabled = state.busy;
   }
 
   function updateJoinAvailability() {
@@ -1488,6 +1494,51 @@
     }
   }
 
+  async function autoRoute() {
+    if (
+      state.busy
+      || state.player?.state !== "selecting_route"
+      || !state.round?.id
+    ) return;
+
+    state.busy = true;
+    clearMessage();
+    updateRouteControls();
+    try {
+      const result = await apiRequest("/game/route/auto/", {
+        method: "POST",
+        body: JSON.stringify({ round_id: state.round.id }),
+      });
+      if (!isCurrentRoundResponse(result.round)) {
+        await loadGame();
+        return;
+      }
+
+      const cityPath = buildCityPath(
+        result.player.source_city_id,
+        result.route_ids,
+      );
+      if (
+        cityPath.length !== result.route_ids.length + 1
+        || cityPath.at(-1) !== result.player.target_city_id
+      ) {
+        throw new Error("Сервер вернул некорректный маршрут. Попробуйте ещё раз.");
+      }
+
+      state.selectedRouteIds = [...result.route_ids];
+      state.selectedCityIds = cityPath;
+      updateRouteControls();
+      drawMap();
+    } catch (error) {
+      applyProjectionError(error);
+      showMessage(error.message);
+    } finally {
+      state.busy = false;
+      updateJoinAvailability();
+      updateRouteControls();
+    }
+  }
+
   function showEmojiBlock() {
     const emojiBlock = document.getElementById('emojiBlock');
     const images = ['👏', '👌', '👍', '👋', '🏆'];
@@ -1505,6 +1556,7 @@
 
   elements.joinButton.addEventListener("click", joinGame);
   elements.confirmButton.addEventListener("click", confirmRoute);
+  elements.autoRouteButton.addEventListener("click", autoRoute);
   elements.mapOverlay.addEventListener("click", handleRouteClick);
   elements.mapOverlay.addEventListener("keydown", handleMapKeydown);
 

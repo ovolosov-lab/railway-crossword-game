@@ -39,7 +39,17 @@
             <p id="player-description"></p>
             <p class="player-score" id="player-score" hidden></p>
             <div class="assigned-cities" id="assigned-cities" hidden></div>
-            <p class="route-progress" id="route-progress" hidden></p>
+            <p class="route-progress" id="route-progress" hidden>
+              <span id="route-progress-text"></span>
+              <button
+                class="auto-route-button"
+                id="auto-route-button"
+                type="button"
+                title="Проложить путь автоматически"
+                aria-label="Проложить путь автоматически"
+                hidden
+              >🤖</button>
+            </p>
             <button class="game-button" id="join-button" type="button" hidden>Присоединиться к раунду</button>
             <button class="game-button" id="confirm-route-button" type="button" hidden disabled>Подтвердить маршрут</button>
             <button class="game-button hidden" id="play-with-train" type="button" disabled>Хочу еще поезд!</button>

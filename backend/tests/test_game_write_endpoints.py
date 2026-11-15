@@ -379,6 +379,64 @@ class GameWriteEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.game.players[self.user.id].chosen_route_ids, [])
         self.assertEqual(self.game.shared_words, {})
 
+    async def test_auto_route_returns_a_simple_path_without_confirming_it(self) -> None:
+        await self.game.add_player(
+            self.user.id,
+            1,
+            3,
+            starting_score=self.user.score,
+        )
+
+        response = self.client.post(
+            "/game/route/auto/",
+            json={"round_id": str(self.game.game_id)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["player"]["state"], "selecting_route")
+        self.assertEqual(body["player"]["route_ids"], [])
+        self.assertGreaterEqual(len(body["route_ids"]), 1)
+
+        route_by_id = {route.id: route for route in self.session.routes}
+        city_path = [1]
+        for route_id in body["route_ids"]:
+            route = route_by_id[route_id]
+            self.assertGreaterEqual(route.length_in_letters, 5)
+            if route.source_city_id == city_path[-1]:
+                city_path.append(route.target_city_id)
+            else:
+                self.assertEqual(route.target_city_id, city_path[-1])
+                city_path.append(route.source_city_id)
+        self.assertEqual(city_path[-1], 3)
+        self.assertEqual(len(city_path), len(set(city_path)))
+        self.assertEqual(self.game.players[self.user.id].chosen_route_ids, [])
+
+        confirmed = self.confirm_route(body["route_ids"])
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertEqual(confirmed.json()["player"]["state"], "playing")
+        self.assertEqual(confirmed.json()["player"]["route_ids"], body["route_ids"])
+
+    async def test_auto_route_reports_when_assigned_cities_are_disconnected(self) -> None:
+        await self.game.add_player(
+            self.user.id,
+            1,
+            3,
+            starting_score=self.user.score,
+        )
+        self.session.routes = [self.session.routes[0]]
+
+        response = self.client.post(
+            "/game/route/auto/",
+            json={"round_id": str(self.game.game_id)},
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            response.json()["error"]["code"],
+            "route_not_connected",
+        )
+
     async def test_shared_segments_reuse_the_same_word_placements(self) -> None:
         with patch(
             "app.game_api.secrets.choice",

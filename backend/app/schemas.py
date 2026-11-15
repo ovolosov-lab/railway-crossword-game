@@ -280,6 +280,16 @@ class GameRouteRequest(Schema):
         return value
 
 
+class GameAutoRouteRequest(Schema):
+    round_id: UUID
+
+
+class GameAutoRouteResponse(Schema):
+    round: RoundProjection
+    player: PlayerProjection
+    route_ids: list[PositiveId] = Field(min_length=1)
+
+
 class CrosswordPlacementResponse(Schema):
     placement_id: UUID
     route_id: PositiveId
