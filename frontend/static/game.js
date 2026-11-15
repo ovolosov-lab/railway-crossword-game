@@ -615,6 +615,7 @@
     if (!placement || placement.is_guessed) return;
     state.activePlacementId = placementId;
     elements.answer.value = "";
+    elements.answer.placeholder = "_".repeat(placement.letter_count);
     setFeedback(elements.wordFeedback, "", "success");
     setFeedback(elements.hintFeedback, "", "success");
     renderActivePlacement();
