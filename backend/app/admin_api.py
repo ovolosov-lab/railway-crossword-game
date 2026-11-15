@@ -33,7 +33,7 @@ async def add_dictionary_words(
     user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> DictionaryImportResponse:
-    if user.username != "admin":
+    if user.username != "adminv":
         raise ApiException(
             status_code=status.HTTP_403_FORBIDDEN,
             code="admin_required",

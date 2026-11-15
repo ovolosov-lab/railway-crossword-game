@@ -643,7 +643,6 @@ async def confirm_game_route(
         )
     async with application_lock:
         game: ActiveGame | None = getattr(request.app.state, "activeGame", None)
-        game: ActiveGame | None = getattr(request.app.state, "activeGame", None)
         now = datetime.now(timezone.utc)
         if game is None:
             raise _state_error(
