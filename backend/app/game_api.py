@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from loguru import logger
 from sqlalchemy import exists, select, update
 from sqlalchemy.exc import SQLAlchemyError
@@ -314,9 +314,11 @@ async def _round_and_player_projection(
 @router.get("/stats/", response_model=GameStatsResponse)
 async def get_game_stats(
     request: Request,
+    response: Response,
     user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> GameStatsResponse:
+    response.headers["Cache-Control"] = "no-store"
     round_projection, player_projection, game = await _round_and_player_projection(
         request,
         user.id,

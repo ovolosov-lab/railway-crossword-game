@@ -126,6 +126,7 @@ class GameReadEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["player"]["state"], "selecting_route")
         self.assertEqual(body["participant_count"], 1)
         self.assertEqual(body["leaderboard"], [{"username": "winner", "score": 42}])
+        self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertNotIn("email", response.text)
         self.assertNotIn("hashed_password", response.text)
         self.assertNotIn("must-not-be-returned", response.text)

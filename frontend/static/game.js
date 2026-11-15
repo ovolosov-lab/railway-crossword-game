@@ -820,7 +820,9 @@
       const dy = segment.targetY - segment.sourceY;
       const centerX = segment.sourceX + dx * segmentProgress;
       const centerY = segment.sourceY + dy * segmentProgress;
-      const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+      let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+      if (angle > 90) angle -= 180;
+      else if (angle < -90) angle += 180;
       const x = centerX - dy / segment.length * sideOffset;
       const y = centerY + dx / segment.length * sideOffset;
       train.setAttribute("transform", `translate(${x} ${y}) rotate(${angle})`);
@@ -869,7 +871,7 @@
 
   async function refreshLeaderboard() {
     try {
-      const stats = await apiRequest("/game/stats/");
+      const stats = await apiRequest("/game/stats/", { cache: "no-store" });
       renderLeaderboard(stats.leaderboard);
       elements.participantCount.textContent = `Участников: ${numberFormat.format(stats.participant_count)}`;
       if (stats.round.id && String(stats.round.id) !== String(state.round?.id)) {
@@ -1337,7 +1339,7 @@
     try {
       const [mapData, stats] = await Promise.all([
         apiRequest("/game/routes/"),
-        apiRequest("/game/stats/"),
+        apiRequest("/game/stats/", { cache: "no-store" }),
       ]);
       if (mapData.round.id && stats.round.id && mapData.round.id !== stats.round.id) {
         throw new Error("Состояние раунда изменилось во время загрузки. Обновите страницу.");
