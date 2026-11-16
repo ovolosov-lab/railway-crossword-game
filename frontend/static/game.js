@@ -800,7 +800,7 @@
 
     const totalLength = segments.reduce((sum, segment) => sum + segment.length, 0);
     const duration = Math.max(3300, Math.min(7500, segments.length * 1050));
-    const sideOffset = -10;
+    const sideOffset = 12;
     let startTime = null;
     const moveTrain = (timestamp) => {
       if (startTime === null) startTime = timestamp;
