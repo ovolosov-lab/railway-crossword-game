@@ -36,6 +36,21 @@ from app.security import (
 
 
 class GameApiContractTests(unittest.TestCase):
+    def test_language_is_required_and_only_supports_ru_or_en(self) -> None:
+        secret = SecretStr("test-secret-for-game-contract-at-least-32-bytes")
+        with patch.dict(os.environ, {}, clear=True), patch.dict(
+            Settings.model_config, {"env_file": None}
+        ):
+            with self.assertRaises(ValidationError):
+                Settings.model_validate({"jwt_secret": secret})
+            for language in ("ru", "en"):
+                self.assertEqual(
+                    Settings.model_validate({"jwt_secret": secret, "language": language}).language,
+                    language,
+                )
+            with self.assertRaises(ValidationError):
+                Settings.model_validate({"jwt_secret": secret, "language": "de"})
+
     def test_round_id_is_flat_in_requests_and_nested_in_responses(self) -> None:
         round_id = uuid4()
         request = GameRouteRequest(round_id=round_id, route_ids=[1, 2])
@@ -127,6 +142,7 @@ class GameApiContractTests(unittest.TestCase):
             os.environ,
             {
                 "JWT_SECRET": secret,
+                "LANGUAGE": "ru",
                 "USER_GUESS_RATE_LIMIT": "12",
                 "FRONTEND_SYNC_INTERVAL": "4.5",
                 "CHECK_INTERVAL": "25",

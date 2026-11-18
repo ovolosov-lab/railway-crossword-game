@@ -1,4 +1,5 @@
 import json
+import math
 import unittest
 from pathlib import Path
 
@@ -66,6 +67,37 @@ class ReferenceDataTests(unittest.TestCase):
                 pending.extend(adjacency[city_id] - visited)
 
         self.assertEqual(visited, city_ids)
+
+    def test_localized_catalogs_share_ids_and_physical_coordinates(self) -> None:
+        localized = {}
+        for language in ("ru", "en"):
+            with (MIGRATIONS_DIR / f"cities_{language}.json").open(encoding="utf-8") as source:
+                cities = json.load(source)["cities"]
+            ids = [city["id"] for city in cities]
+            self.assertEqual(len(ids), len(set(ids)))
+            localized[language] = {city["id"]: city for city in cities}
+
+        self.assertEqual(set(localized["ru"]), set(localized["en"]))
+        for city_id, city in localized["ru"].items():
+            english = localized["en"][city_id]
+            for key in ("country_code", "top", "left", "is_capital"):
+                self.assertEqual(city[key], english[key], (city_id, key))
+
+    def test_new_route_lengths_match_map_geometry(self) -> None:
+        cities = {city["id"]: city for city in self.cities}
+        expected_pairs = {(15, 34), (12, 37), (15, 37)}
+        found = set()
+        for route in self.routes:
+            pair = (route["source_city_id"], route["target_city_id"])
+            if pair in expected_pairs:
+                source, target = (cities[city_id] for city_id in pair)
+                expected = math.floor(
+                    math.hypot(source["left"] - target["left"], source["top"] - target["top"])
+                    / 26
+                )
+                self.assertEqual(route["length_in_letters"], expected)
+                found.add(pair)
+        self.assertEqual(found, expected_pairs)
 
 
 if __name__ == "__main__":

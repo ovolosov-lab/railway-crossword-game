@@ -29,7 +29,7 @@ class DictionaryModelTests(unittest.TestCase):
         )
         self.assertEqual(
             set(Base.metadata.tables),
-            {"users", "cities", "routes", "dictionary_words", "game_results"},
+            {"users", "physical_cities", "cities", "routes", "dictionary_words", "game_results"},
         )
         active_lookup = next(
             index

@@ -90,6 +90,24 @@ class User(Base):
     )
 
 
+class PhysicalCity(Base):
+    __tablename__ = "physical_cities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    translations: Mapped[list[City]] = relationship(back_populates="physical_city")
+    outgoing_routes: Mapped[list[Route]] = relationship(
+        back_populates="source_city",
+        foreign_keys=lambda: [Route.source_city_id],
+        passive_deletes=True,
+    )
+    incoming_routes: Mapped[list[Route]] = relationship(
+        back_populates="target_city",
+        foreign_keys=lambda: [Route.target_city_id],
+        passive_deletes=True,
+    )
+
+
 class City(Base):
     __tablename__ = "cities"
     __table_args__ = (
@@ -97,14 +115,20 @@ class City(Base):
             "country_code = upper(country_code)",
             name="ck_cities_country_code_uppercase",
         ),
+        CheckConstraint("lang IN ('ru', 'en')", name="ck_cities_lang"),
         Index(
-            "uq_cities_name_lower",
+            "uq_cities_lang_name_lower",
+            "lang",
             text("lower(name)"),
             unique=True,
         ),
     )
 
-    id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
+    id: Mapped[int] = mapped_column(
+        ForeignKey("physical_cities.id", name="fk_cities_physical_city_id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    lang: Mapped[str] = mapped_column(String(2), primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     country_code: Mapped[str] = mapped_column(String(2), nullable=False)
     top: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
@@ -116,16 +140,7 @@ class City(Base):
         server_default=text("false"),
     )
 
-    outgoing_routes: Mapped[list[Route]] = relationship(
-        back_populates="source_city",
-        foreign_keys=lambda: [Route.source_city_id],
-        passive_deletes=True,
-    )
-    incoming_routes: Mapped[list[Route]] = relationship(
-        back_populates="target_city",
-        foreign_keys=lambda: [Route.target_city_id],
-        passive_deletes=True,
-    )
+    physical_city: Mapped[PhysicalCity] = relationship(back_populates="translations")
 
 
 class Route(Base):
@@ -152,28 +167,28 @@ class Route(Base):
     id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
     source_city_id: Mapped[int] = mapped_column(
         ForeignKey(
-            "cities.id",
+            "physical_cities.id",
             ondelete="RESTRICT",
-            name="fk_routes_source_city_id_cities",
+            name="fk_routes_source_city_id_physical_cities",
         ),
         nullable=False,
     )
     target_city_id: Mapped[int] = mapped_column(
         ForeignKey(
-            "cities.id",
+            "physical_cities.id",
             ondelete="RESTRICT",
-            name="fk_routes_target_city_id_cities",
+            name="fk_routes_target_city_id_physical_cities",
         ),
         nullable=False,
     )
     length_in_letters: Mapped[int] = mapped_column(SmallInteger, nullable=False)
 
-    source_city: Mapped[City] = relationship(
+    source_city: Mapped[PhysicalCity] = relationship(
         back_populates="outgoing_routes",
         foreign_keys=[source_city_id],
         passive_deletes=True,
     )
-    target_city: Mapped[City] = relationship(
+    target_city: Mapped[PhysicalCity] = relationship(
         back_populates="incoming_routes",
         foreign_keys=[target_city_id],
         passive_deletes=True,

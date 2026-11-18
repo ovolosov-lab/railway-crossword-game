@@ -41,6 +41,9 @@
 {"source_city_id":8, "target_city_id":9, "length_in_letters":15},
 {"source_city_id":8, "target_city_id":10, "length_in_letters":14},
 {"source_city_id":9, "target_city_id":10, "length_in_letters":19},
+{"source_city_id":15, "target_city_id":34, "length_in_letters":31},
+{"source_city_id":12, "target_city_id":37, "length_in_letters":36},
+{"source_city_id":15, "target_city_id":37, "length_in_letters":18},
 {"source_city_id":9, "target_city_id":11, "length_in_letters":25}
 ]
 }

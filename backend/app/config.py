@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     app_name: str = "Railway"
     app_env: str = "development"
     debug: bool = False
+    language: Literal["ru", "en"]
     host: str = "0.0.0.0"
     port: int = Field(default=8000, ge=1, le=65535)
     database_url: str | None = None
@@ -83,4 +84,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return Settings.model_validate({})

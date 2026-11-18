@@ -6,6 +6,7 @@ services:
     environment:
       APP_NAME: ${APP_NAME:-Railway}
       APP_ENV: ${APP_ENV:-development}
+      LANGUAGE: ${LANGUAGE:?Set LANGUAGE to ru or en in the root .env file}
       DEBUG: ${DEBUG:-false}
       HOST: ${HOST:-0.0.0.0}
       PORT: ${PORT:-8000}

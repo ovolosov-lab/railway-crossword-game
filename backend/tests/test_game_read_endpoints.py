@@ -3,6 +3,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import patch
 from uuid import uuid4
 
 from fastapi import FastAPI
@@ -167,6 +168,18 @@ class GameReadEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["player"]["state"], "playing")
         self.assertEqual(response.json()["player"]["route_ids"], [1])
+
+    async def test_map_selects_only_the_configured_language(self) -> None:
+        for language in ("ru", "en"):
+            with self.subTest(language=language):
+                settings = self.settings.model_copy(update={"language": language})
+                self.session.statements.clear()
+                with patch("app.game_api.get_settings", return_value=settings):
+                    response = self.client.get("/game/routes/")
+                self.assertEqual(response.status_code, 200)
+                statement = self.session.statements[0]
+                self.assertIn("cities.lang =", str(statement))
+                self.assertIn(language, statement.compile().params.values())
 
     async def test_finished_round_projects_won_and_lost_states(self) -> None:
         await self.game.add_player(self.user_id, 1, 2, now=self.started_at)

@@ -366,7 +366,9 @@ async def get_game_routes(
         user.id,
     )
     try:
-        city_result = await session.scalars(select(City).order_by(City.id))
+        city_result = await session.scalars(
+            select(City).where(City.lang == get_settings().language).order_by(City.id)
+        )
         route_result = await session.scalars(select(Route).order_by(Route.id))
         cities = [CityRead.model_validate(city) for city in city_result.all()]
         routes = [RouteRead.model_validate(route) for route in route_result.all()]
@@ -557,7 +559,9 @@ async def join_game(
             )
 
         try:
-            city_result = await session.scalars(select(City.id).order_by(City.id))
+            city_result = await session.scalars(
+                select(City.id).where(City.lang == get_settings().language).order_by(City.id)
+            )
             city_ids = list(city_result.all())
         except SQLAlchemyError as exc:
             logger.exception("Could not load cities for game participation")
