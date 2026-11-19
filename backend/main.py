@@ -9,10 +9,12 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.templating import Jinja2Templates
 from loguru import logger
+from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +24,12 @@ from app.admin_api import router as admin_router
 from app.api_errors import api_exception_handler, request_validation_exception_handler
 from app.config import Settings, get_settings
 from app.database import engine, get_db
+from app.game_generation import (
+    GameGeneration,
+    GameGenerationUnavailable,
+    StaleGameGeneration,
+    create_redis_client,
+)
 from app.auth import router as auth_router
 from app.game_api import router as game_router, write_router as game_write_router
 from app.game_state import ActiveGame, GameFinishedError, PrevGame
@@ -37,10 +45,31 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     """Initialize database and game lifecycle services for the application."""
     logger.info("Starting {}", settings.app_name)
     periodic_task: AsyncPeriodicTask | None = None
+    redis_client = None
     try:
         await check_database_connection()
         application.state.game_lock = asyncio.Lock()
         application.state.game_settings = settings
+        application.state.game_generation = None
+        if settings.redis_url is not None:
+            redis_client = create_redis_client(settings.redis_url)
+            try:
+                application.state.game_generation = await GameGeneration.load_current(
+                    redis_client
+                )
+            except (RedisError, GameGenerationUnavailable):
+                logger.exception(
+                    "Application startup failed: Redis generation is unavailable"
+                )
+                raise
+            logger.info(
+                "Using game generation {}",
+                application.state.game_generation.generation_id,
+            )
+        else:
+            logger.warning(
+                "REDIS_URL is unset; running the legacy MVP without generation fencing"
+            )
         application.state.activeGame = ActiveGame.create(settings=settings)
         application.state.prevGame = PrevGame()
         logger.info("Created initial game round {}", application.state.activeGame.game_id)
@@ -60,8 +89,12 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
             if periodic_task is not None:
                 await periodic_task.stop()
         finally:
-            await engine.dispose()
-            logger.info("Stopped {}", settings.app_name)
+            try:
+                if redis_client is not None:
+                    await redis_client.aclose()
+            finally:
+                await engine.dispose()
+                logger.info("Stopped {}", settings.app_name)
 
 
 async def check_database_connection() -> None:
@@ -114,6 +147,48 @@ app = FastAPI(
         RequestValidationError: request_validation_exception_handler,
     },
 )
+
+
+@app.middleware("http")
+async def fence_stale_game_worker(request: Request, call_next):
+    game_generation: GameGeneration | None = getattr(
+        request.app.state,
+        "game_generation",
+        None,
+    )
+    if game_generation is not None:
+        try:
+            await game_generation.assert_current()
+        except StaleGameGeneration:
+            logger.warning(
+                "Rejected request from worker with stale game generation {}",
+                game_generation.generation_id,
+            )
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={
+                    "error": {
+                        "code": "game_state_unavailable",
+                        "message": "Game state is temporarily unavailable.",
+                        "details": None,
+                    }
+                },
+            )
+        except RedisError:
+            logger.exception("Rejected request: Redis game state is unavailable")
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={
+                    "error": {
+                        "code": "game_state_unavailable",
+                        "message": "Game state is temporarily unavailable.",
+                        "details": None,
+                    }
+                },
+            )
+    return await call_next(request)
+
+
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(game_router)

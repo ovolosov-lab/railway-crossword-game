@@ -1,4 +1,5 @@
 import asyncio
+import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -7,14 +8,16 @@ from fastapi import FastAPI
 from pydantic import SecretStr
 
 from app.config import Settings
+from app.game_generation import GameGenerationUnavailable, StaleGameGeneration
 from app.game_state import ActiveGame, PrevGame
 from app.periodic_task import AsyncPeriodicTask
-from main import check_game_duration, lifespan
+from main import check_game_duration, fence_stale_game_worker, lifespan
 
 
 def test_settings() -> Settings:
     return Settings(
         jwt_secret=SecretStr("test-secret-for-game-lifecycle-tests-only"),
+        language="ru",
         game_duration_hours=1,
         check_interval=1,
     )
@@ -220,6 +223,60 @@ class GameLifecycleTests(unittest.IsolatedAsyncioTestCase):
                     self.fail("lifespan must not start without database access")
 
         mocked_engine.dispose.assert_awaited_once()
+
+    async def test_lifespan_requires_a_bootstrapped_generation_when_redis_is_configured(
+        self,
+    ) -> None:
+        application = FastAPI()
+        configured_settings = self.settings.model_copy(
+            update={"redis_url": SecretStr("redis://redis:6379/0")}
+        )
+        redis_client = MagicMock()
+        redis_client.ping = AsyncMock()
+        redis_client.get = AsyncMock(return_value=None)
+        redis_client.aclose = AsyncMock()
+        mocked_engine = MagicMock()
+        mocked_engine.dispose = AsyncMock()
+
+        with (
+            patch("main.settings", configured_settings),
+            patch("main.check_database_connection", new_callable=AsyncMock),
+            patch("main.create_redis_client", return_value=redis_client),
+            patch("main.engine", mocked_engine),
+        ):
+            with self.assertRaises(GameGenerationUnavailable):
+                async with lifespan(application):
+                    self.fail("worker must not start without a generation")
+
+        redis_client.aclose.assert_awaited_once()
+        mocked_engine.dispose.assert_awaited_once()
+
+    async def test_stale_worker_requests_fail_closed(self) -> None:
+        application = FastAPI()
+        application.state.game_generation = MagicMock()
+        application.state.game_generation.generation_id = "stale-generation"
+        application.state.game_generation.assert_current = AsyncMock(
+            side_effect=StaleGameGeneration("stale worker")
+        )
+        request = MagicMock()
+        request.app = application
+        call_next = AsyncMock()
+
+        response = await fence_stale_game_worker(request, call_next)
+
+        self.assertEqual(response.status_code, 503)
+        assert isinstance(response.body, bytes)
+        self.assertEqual(
+            json.loads(response.body.decode("utf-8")),
+            {
+                "error": {
+                    "code": "game_state_unavailable",
+                    "message": "Game state is temporarily unavailable.",
+                    "details": None,
+                }
+            },
+        )
+        call_next.assert_not_awaited()
 
 
 if __name__ == "__main__":

@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     db_host: str | None = None
     db_port: int | None = Field(default=None, ge=1, le=65535)
     db_name: str | None = None
+    redis_url: SecretStr | None = Field(default=None, repr=False)
     jwt_secret: SecretStr = Field(default=SecretStr(""), repr=False)
     jwt_algorithm: Literal["HS256"] = "HS256"
     access_token_expire_minutes: int = Field(default=120, ge=1)
@@ -80,6 +81,17 @@ class Settings(BaseSettings):
             port=self.db_port,
             database=self.db_name,
         ).render_as_string(hide_password=False)
+
+
+class RedisConnectionSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=PROJECT_ROOT / ".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    redis_url: SecretStr | None = Field(default=None, repr=False)
 
 
 @lru_cache
