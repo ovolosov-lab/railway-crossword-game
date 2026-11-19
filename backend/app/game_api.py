@@ -936,6 +936,7 @@ async def confirm_game_route(
                     select(DictionaryWord)
                     .where(
                         DictionaryWord.is_active.is_(True),
+                        DictionaryWord.language_code == get_settings().language,
                         DictionaryWord.letter_count <= max_capacity,
                     )
                     .order_by(DictionaryWord.id)

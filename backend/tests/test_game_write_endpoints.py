@@ -100,7 +100,11 @@ class _FakeSession:
         elif "from routes" in query:
             values = self.routes
         elif "from dictionary_words" in query:
-            values = self.words
+            language = statement.compile().params.get("language_code_1")
+            values = [
+                word for word in self.words
+                if language is None or getattr(word, "language_code", "ru") == language
+            ]
         else:
             raise AssertionError(f"Unexpected query: {statement}")
         return SimpleNamespace(all=lambda: values)
@@ -176,6 +180,7 @@ class GameWriteEndpointTests(unittest.IsolatedAsyncioTestCase):
         """Create an isolated app, active round, and overridable dependencies."""
         self.settings = Settings(
             jwt_secret=SecretStr("test-secret-for-game-write-endpoints-32-bytes"),
+            language="ru",
             game_duration_hours=1,
         )
         self.game = ActiveGame.create(settings=self.settings)
@@ -358,6 +363,42 @@ class GameWriteEndpointTests(unittest.IsolatedAsyncioTestCase):
             replaced.json()["error"]["code"],
             "route_already_confirmed",
         )
+
+    async def test_crossword_uses_only_the_configured_language(self) -> None:
+        self.session.words.insert(
+            0,
+            SimpleNamespace(
+                id=999, word_text="train", definition="English clue",
+                letter_count=3, is_active=True, language_code="en",
+            ),
+        )
+        self.settings.language = "en"
+        with patch("app.game_api.get_settings", return_value=self.settings), patch(
+            "app.game_api.secrets.choice", side_effect=lambda choices: choices[0]
+        ), patch("app.game_api.secrets.randbelow", return_value=0):
+            self.join_as()
+            response = self.confirm_route([10])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["crossword"][0]["definition"], "English clue")
+        self.assertEqual(self.game.shared_words[10][0].dictionary_word_id, 999)
+
+    async def test_russian_crossword_excludes_english_words(self) -> None:
+        self.session.words.insert(
+            0,
+            SimpleNamespace(
+                id=999, word_text="train", definition="English clue",
+                letter_count=3, is_active=True, language_code="en",
+            ),
+        )
+        self.settings.language = "ru"
+        with patch("app.game_api.get_settings", return_value=self.settings), patch(
+            "app.game_api.secrets.choice", side_effect=lambda choices: choices[0]
+        ), patch("app.game_api.secrets.randbelow", return_value=0):
+            self.join_as()
+            response = self.confirm_route([10])
+        self.assertEqual(response.status_code, 200)
+        self.assertNotEqual(response.json()["crossword"][0]["definition"], "English clue")
+        self.assertNotEqual(self.game.shared_words[10][0].dictionary_word_id, 999)
 
     async def test_route_rejects_disconnected_segments_without_mutating_game(self) -> None:
         with patch(

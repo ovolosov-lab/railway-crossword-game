@@ -16,6 +16,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     func,
     text,
@@ -258,6 +259,11 @@ class GameResult(Base):
             "finish_reason <> 'timeout' OR score_awarded = 0",
             name="ck_game_results_timeout_score_zero",
         ),
+        CheckConstraint(
+            "session_id IS NULL OR finish_reason = 'winner'",
+            name="ck_game_results_session_winner",
+        ),
+        UniqueConstraint("session_id", name="uq_game_results_session_id"),
         Index(
             "ix_game_results_winner_finished_at",
             "winner_user_id",
@@ -273,6 +279,7 @@ class GameResult(Base):
         Uuid(as_uuid=True),
         primary_key=True,
     )
+    session_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     winner_user_id: Mapped[UUID | None] = mapped_column(
         ForeignKey(
             "users.id",
