@@ -82,6 +82,10 @@
   let popupTimer = null;
   let popupElement = null;
 
+  function t(key, fallback = '') {
+    return window.I18N?.[key] || fallback || key;
+  }
+
   function showPopUpBlock(message, duration) {
     if (!popupElement) {
       popupElement = document.createElement("div");
@@ -158,17 +162,17 @@
         credentials: "same-origin",
       });
     } catch {
-      throw new Error("Не удалось связаться с сервером. Проверьте подключение и повторите попытку.");
+      throw new Error(t("error_fetch"));
     }
 
     let body;
     try {
       body = await response.json();
     } catch {
-      throw new Error("Сервер вернул некорректный ответ. Попробуйте обновить страницу.");
+      throw new Error(t("error_response"));
     }
     if (!response.ok) {
-      const error = new Error(body?.error?.message || "Не удалось выполнить запрос.");
+      const error = new Error(body?.error?.message || t("error_request"));
       error.code = body?.error?.code;
       error.status = response.status;
       error.retryAfter = response.headers.get("Retry-After");
@@ -213,11 +217,11 @@
     }
     state.round = { ...round };
     const statusLabels = {
-      active: "Раунд идёт",
-      finished: "Раунд завершён",
-      being_created: "Новый раунд скоро",
+      active: t("status_active"),
+      finished: t("status_finished"),
+      being_created: t("status_waiting"),
     };
-    elements.roundStatus.textContent = statusLabels[round.status] || "Статус неизвестен";
+    elements.roundStatus.textContent = statusLabels[round.status] || t("status_unknown");
     elements.roundStatus.dataset.state = round.status;
     updateTimer();
   }
@@ -249,7 +253,7 @@
     const score = state.player?.round_score;
     elements.playerScore.hidden = score === null || score === undefined;
     if (score !== null && score !== undefined) {
-      elements.playerScore.textContent = `Очки в раунде: ${numberFormat.format(score)}`;
+      elements.playerScore.textContent = `${t("scores")}: ${numberFormat.format(score)}`;
     }
   }
 
@@ -270,7 +274,7 @@
     if (!rows.length) {
       const item = document.createElement("li");
       item.className = "leaderboard-empty";
-      item.textContent = "Пока нет зафиксированных побед.";
+      item.textContent = t("leaderboard_empty");
       elements.leaderboard.append(item);
       return;
     }
@@ -324,7 +328,7 @@
   }
 
   function drawCrossword() {
-    const layer = svgElement("g", { "aria-label": "Клетки кроссворда" });
+    const layer = svgElement("g", { "aria-label": t("crossword_cells") });
     const mapScale = elements.mapOverlay.getBoundingClientRect().width / 4000;
     if (!mapScale) return layer;
 
@@ -401,7 +405,7 @@
           "data-placement-id": placement.placement_id,
           role: "button",
           tabindex: "0",
-          "aria-label": `${placement.definition}. ${placement.letter_count} клеток${placement.is_guessed ? ". Слово разгадано" : ""}`,
+          "aria-label": `${placement.definition}. ${placement.letter_count} cells${placement.is_guessed ? t("crossword_area_label") : ""}`,
           "aria-pressed": placement.is_guessed ? "true" : "false",
         });
         const totalWidth = placement.letter_count * cellSize;
@@ -467,8 +471,8 @@
 
   function drawMap() {
     elements.mapOverlay.replaceChildren();
-    const routeLayer = svgElement("g", { "aria-label": "Участки железных дорог" });
-    const cityLayer = svgElement("g", { "aria-label": "Города" });
+    const routeLayer = svgElement("g", { "aria-label": t("route_aria_label") });
+    const cityLayer = svgElement("g", { "aria-label": t("city_aria_label") });
     const mapScale = elements.mapOverlay.getBoundingClientRect().width / 4000;
 
     for (const route of state.routes) {
@@ -485,7 +489,7 @@
         "data-route-id": route.id,
         tabindex: isRouteSelectable(route) ? "0" : "-1",
         role: isRouteSelectable(route) ? "button" : "img",
-        "aria-label": `Участок ${source.name} — ${target.name}`,
+        "aria-label": `${t("line_aria_label")} ${source.name} — ${target.name}`,
       });
       if (isRouteSelectable(route)) {
         line.addEventListener("keydown", (event) => {
@@ -559,13 +563,13 @@
     if (!placement) return;
 
     elements.wordDialogTitle.textContent = placement.is_guessed
-      ? "Слово разгадано"
-      : "Определение";
+      ? t("word_dialog_guessed")
+      : t("word_dialog_title");
     elements.wordDefinition.textContent = placement.definition;
 
-    const ending = placement.letter_count < 5 ? "ы" : "";
-
-    elements.wordLength.textContent = `В слове ${placement.letter_count} букв${ending}.`;
+    // const ending = placement.letter_count < 5 ? "ы" : "";
+    // elements.wordLength.textContent = `В слове ${placement.letter_count} букв${ending}.`;
+    elements.wordLength.textContent =  formatWordLetters(placement.letter_count, '{{ locale }}' );
     elements.answer.disabled = (
       placement.is_guessed
       || state.player?.state !== "playing"
@@ -587,24 +591,24 @@
     elements.firstHint.hidden = !canUseHints;
     elements.lastHint.hidden = !canUseHints;
     for (const [button, hintType, label] of [
-      [elements.firstHint, "first_letter", "Первая буква"],
-      [elements.lastHint, "last_letter", "Последняя буква"],
+      [elements.firstHint, "first_letter", t("hint_first")],
+      [elements.lastHint, "last_letter", t("hint_last")],
     ]) {
       const alreadyUsed = placement.hint_types_used.includes(hintType);
-      button.textContent = alreadyUsed ? `Показать снова: ${label.toLowerCase()}` : label;
+      button.textContent = alreadyUsed ? `${t("show_again")}: ${label.toLowerCase()}` : label;
       button.disabled = state.busy || state.unavailableHints.has(
         `${placement.placement_id}:${hintType}`,
       );
     }
 
     if (placement.is_guessed && placement.revealed_word) {
-      setFeedback(elements.wordFeedback, `Ответ: ${placement.revealed_word}`, "success");
+      setFeedback(elements.wordFeedback, `${t("answer")}: ${placement.revealed_word}`, "success");
     }
 
     const hints = state.hintValues.get(placement.placement_id) || {};
     const hintMessages = [];
-    if (hints.first_letter) hintMessages.push(`Первая буква: <b style='color:#c709fc;'>${hints.first_letter}</b>`);
-    if (hints.last_letter) hintMessages.push(`Последняя буква: <b style='color:#c709fc;'>${hints.last_letter}</b>`);
+    if (hints.first_letter) hintMessages.push(`${t("hint_first")}: <b style='color:#c709fc;'>${hints.first_letter}</b>`);
+    if (hints.last_letter) hintMessages.push(`${t("hint_last")}: <b style='color:#c709fc;'>${hints.last_letter}</b>`);
     if (hintMessages.length && elements.hintFeedback.dataset.kind !== "error") {
       setFeedback(elements.hintFeedback, hintMessages.join(" · "), "success");
     }
@@ -641,10 +645,10 @@
     if (elements.wordDialog.open) elements.wordDialog.close();
 
     const result = player.state === "won"
-      ? "Поздравляем! Вы победили!"
+      ? t("message_won")
       : round.finish_reason === "timeout"
-        ? "Время раунда истекло. Победителя нет."
-        : "Раунд завершён победой другого игрока 😔";
+        ? "The round time has run out. There is no winner."
+        : "The round has ended with a victory for the other player 😔";
     // console.log(player.state);
     elements.assignedCities.hidden = true; 
     elements.assignedCities.replaceChildren();       
@@ -660,7 +664,7 @@
       }
       startVictoryCelebration();
     } else if ((player.state !== "won") && (round.finish_reason !== "timeout")) {
-        showPopUpBlock("К сожалению, в этом раунде победил другой игрок 😔", 4000);
+        showPopUpBlock(`${t("popup_message_sorry")} 😔`, 4000);
     } 
 
     void refreshLeaderboard();
@@ -873,7 +877,7 @@
     try {
       const stats = await apiRequest("/game/stats/", { cache: "no-store" });
       renderLeaderboard(stats.leaderboard);
-      elements.participantCount.textContent = `Участников: ${numberFormat.format(stats.participant_count)}`;
+      elements.participantCount.textContent = `${t("participants")}: ${numberFormat.format(stats.participant_count)}`;
       if (stats.round.id && String(stats.round.id) !== String(state.round?.id)) {
         const terminalMessage = elements.message.textContent;
         const terminalKind = elements.message.dataset.kind;
@@ -886,7 +890,7 @@
         startSyncPolling();
       }
     } catch (error) {
-      showMessage(`Раунд завершён. Не удалось обновить таблицу победителей: ${error.message}`);
+      showMessage(`${t("error_leaderboard")}: ${error.message}`);
     }
   }
 
@@ -977,7 +981,7 @@
       if (error.code === "stale_round" || error.code === "round_id_mismatch") {
         reloadCurrentRound = true;
       } else if (elements.message.dataset.source !== "sync") {
-        showMessage(`Не удалось синхронизировать игру: ${error.message}`);
+        showMessage(`${t("error_sync")}: ${error.message}`);
         elements.message.dataset.source = "sync";
       }
     } finally {
@@ -1014,7 +1018,7 @@
       state.player = response.player;
       if (response.hint.hint_type === "unknown") {
         state.unavailableHints.add(`${placement.placement_id}:${hintType}`);
-        setFeedback(elements.hintFeedback, "Для этого слова такая подсказка недоступна.", "error");
+        setFeedback(elements.hintFeedback, t("hint_unavailable"), "error");
       } else {
         const values = state.hintValues.get(placement.placement_id) || {};
         if (hintType == "first_letter") { elements.answer.placeholder = response.hint.value + elements.answer.placeholder.slice(1); } 
@@ -1022,13 +1026,13 @@
         values[hintType] = response.hint.value;
         state.hintValues.set(placement.placement_id, values);
         const charge = response.hint.points_charged
-          ? ` Списано очков: ${response.hint.points_charged}.`
+          ? ` ${t("deducted")}: ${response.hint.points_charged}.`
           : response.hint.already_used
-            ? " Повторное получение бесплатно."
+            ? t("for_free") 
             : "";
         setFeedback(
           elements.hintFeedback,
-          `${hintType === "first_letter" ? "Первая" : "Последняя"} буква: ${response.hint.value}.${charge}`,
+          `${hintType === "first_letter" ? t("hint_first") : t("hint_last")}: ${response.hint.value}.${charge}`,
           "success",
         );
       }
@@ -1039,7 +1043,7 @@
         applyProjectionError(error);
       }
       setFeedback(elements.hintFeedback, error.code === "insufficient_score"
-        ? "Недостаточно очков для этой подсказки."
+        ? t("hint_denied")
         : error.message);
     } finally {
       state.busy = false;
@@ -1063,7 +1067,7 @@
     const requestedRoundId = String(state.round.id);
     state.busy = true;
     renderActivePlacement();
-    setFeedback(elements.wordFeedback, "Проверяем ответ…", "success");
+    setFeedback(elements.wordFeedback, t("checking"), "success");
     try {
       const response = await apiRequest("/game/guess/", {
         method: "POST",
@@ -1109,13 +1113,13 @@
 
         setFeedback(
           elements.wordFeedback,
-          `Верно! Начислено очков: ${numberFormat.format(response.guess.points_awarded)}.`,
+          `${t("correct")}: ${numberFormat.format(response.guess.points_awarded)}.`,
           "success",
         );
       } else if (response.guess?.result === "already_solved") {
-        setFeedback(elements.wordFeedback, "Это слово уже разгадано; ответ открыт.", "success");
+        setFeedback(elements.wordFeedback, t("already_solved"), "success");
       } else if (response.guess?.result === "incorrect") {
-        setFeedback(elements.wordFeedback, "Неверный ответ. Попробуйте ещё раз.", "error");
+        setFeedback(elements.wordFeedback, t("incorrect"), "error");
       }
       if (response.round.status === "finished") {
         renderPlayer();
@@ -1133,12 +1137,12 @@
         state.guessBlockedUntil = Date.now() + Math.max(1, seconds || 1) * 1000;
         setFeedback(
           elements.wordFeedback,
-          `Слишком много попыток. Повторите через ${Math.max(1, seconds || 1)} сек.`,
+          `${t("too_much_attempts")} ${Math.max(1, seconds || 1)} sec.`,
           "error",
         );
       } else {
         setFeedback(elements.wordFeedback, error.status >= 500
-          ? `Сервис временно недоступен: ${error.message}`
+          ? `${t("error_temporary_unavailable")}: ${error.message}`
           : error.message);
       }
     } finally {
@@ -1168,22 +1172,22 @@
     elements.confirmButton.disabled = !canConfirmRoute();
     if (!selecting) {
       elements.mapHelp.textContent = state.player?.state === "playing"
-        ? "Кликните на клетки чайнворда"
+        ? t("map_help_playing")
         : ["won", "lost"].includes(state.player?.state)
-          ? "Раунд завершён"
-        : "Режим просмотра";
+          ? t("map_help_finished")
+        : t("map_help_stat");
       elements.routeProgress.hidden = true;
       return;
     }
     const selectedCount = state.selectedRouteIds.length;
     const reachesTarget = state.selectedCityIds.at(-1) === state.player.target_city_id;
     elements.mapHelp.textContent = reachesTarget
-      ? "Путь достиг города назначения"
-      : "Выбирайте соседний участок";
+      ? t("route_success")
+      : t("route_select");
     elements.routeProgress.hidden = false;
     elements.routeProgressText.textContent = reachesTarget
-      ? `Путь готов: ${selectedCount} ${selectedCount === 1 ? "участок" : "участка"}. Можно подтвердить маршрут.`
-      : `Выбрано участков: ${selectedCount}. Проложите непрерывный путь до города назначения.`;
+      ? t("route_selected")
+      : `${t("route_paths")}: ${selectedCount}. ${t("route_help")}`;
     elements.autoRouteButton.hidden = reachesTarget;
     elements.autoRouteButton.disabled = state.busy;
   }
@@ -1204,7 +1208,7 @@
     }
     elements.joinButton.disabled = !canJoin;
     if (state.player?.state === "watching_stats" && state.round?.status === "active" && state.round.remaining_seconds <= 60) {
-      elements.playerDescription.textContent = "Присоединиться к этому раунду уже нельзя: до конца осталось не более минуты.";
+      elements.playerDescription.textContent = "It is no longer possible to join this round: there is at most a minute left.";
     }
   }
 
@@ -1212,11 +1216,11 @@
     // console.log("renderPlayer");
     const player = state.player || { state: "watching_stats" };
     const states = {
-      watching_stats: ["Перед началом", "Следите за временем - раунд длится не более 6 часов. Как только один из игроков успешно завершает свой чайнворд - раунд завершается. Сразу же стартует новый раунд."],
-      selecting_route: ["Выбор маршрута", "Выберите непрерывную цепочку участков от города отправления до города назначения."],
-      playing: ["Игра стартовала", "Кликните на клетке чайнворда, чтобы открыть описание и ввести ответ."],
-      won: ["Раунд завершён", ""],
-      lost: ["Раунд завершён", "Другой игрок завершил раунд первым. В следующий раз повезет вам!"],
+      watching_stats: [t("watching_stats"), t("help_watching_stats")],
+      selecting_route: [t("selecting_route"), t("help_selecting_route")],
+      playing: [t("playing"), t("help_playing")],
+      won: [t("map_help_finished"), ""],
+      lost: [t("map_help_finished"), "Another player finished the round first. Better luck next time!"],
     };
     const [heading, description] = states[player.state] || states.watching_stats;
     elements.playerHeading.textContent = heading;
@@ -1229,7 +1233,7 @@
     elements.assignedCities.hidden = !hasAssignment;
     elements.assignedCities.replaceChildren();
     if (hasAssignment) {
-      for (const [label, city] of [["Отправление", start], ["Назначение", target]]) {
+      for (const [label, city] of [[t("start_city"), start], [t("end_city"), target]]) {
         const wrapper = document.createElement("span");
         const caption = document.createElement("small");
         const name = document.createElement("span");
@@ -1342,13 +1346,13 @@
         apiRequest("/game/stats/", { cache: "no-store" }),
       ]);
       if (mapData.round.id && stats.round.id && mapData.round.id !== stats.round.id) {
-        throw new Error("Состояние раунда изменилось во время загрузки. Обновите страницу.");
+        throw new Error(t("reload_require"));
       }
       state.cities = mapData.cities;
       state.routes = mapData.routes;
       updateRound(mapData.round);
       renderLeaderboard(stats.leaderboard);
-      elements.participantCount.textContent = `Участников: ${numberFormat.format(stats.participant_count)}`;
+      elements.participantCount.textContent = `${t("participants")}: ${numberFormat.format(stats.participant_count)}`;
       state.player = mapData.player;
       if (mapData.player.state !== "playing") {
         state.crossword = [];
@@ -1357,7 +1361,7 @@
       renderPlayer();
       elements.loading.hidden = true;
       if (mapData.round.status === "being_created") {
-        showMessage("Сейчас создаётся следующий раунд. Обновите страницу чуть позже.", "success");
+        showMessage("The next round is currently being created. Please refresh the page a little later.", "success");
       } else if (
         mapData.round.id
         && ["playing", "won", "lost"].includes(mapData.player.state)
@@ -1369,7 +1373,7 @@
       showMessage(error.message);
       elements.playerCard.hidden = true;
       elements.timer.textContent = "—";
-      elements.roundStatus.textContent = "Нет соединения";
+      elements.roundStatus.textContent = t("error_connection");
     }
   }
 
@@ -1397,18 +1401,18 @@
       renderPlayer();
       if (result.player.state === "watching_stats") {
         const message = result.round.status === "being_created"
-          ? "Сейчас создаётся следующий раунд. Попробуйте присоединиться чуть позже."
+          ? "The next round is currently being created. Please try joining a little later."
           : result.round.status === "finished"
-            ? "Раунд уже завершён. Обновите страницу для просмотра текущего состояния."
-            : "Не удалось присоединиться к раунду. Попробуйте ещё раз позже.";
+            ? t("session_finished")
+            : "Unable to join the round. Please try again later.";
         showMessage(message, "error");
       } else {
-        showMessage("Города назначены. Теперь проложите путь на карте.", "success");
+        showMessage(t("help_route_start"), "success");
       }
     } catch (error) {
       applyProjectionError(error);
       showMessage(error.code === "city_pairs_exhausted"
-        ? "Все допустимые пары городов уже назначены. Попробуйте присоединиться к следующему раунду."
+        ? t(error_route) 
         : error.message);
     } finally {
       state.busy = false;
@@ -1436,7 +1440,7 @@
       });
       if (result.round.id !== state.round.id) {
         state.retryRouteIds = null;
-        showMessage("Ответ относится к завершённому раунду и не был применён. Обновите страницу.");
+        showMessage("The response relates to an incomplete round and was not applied. Please refresh the page.");
         await loadGame();
         return;
       }
@@ -1454,7 +1458,7 @@
       state.crosswordLoaded = true;
       renderPlayer();
       state.retryRouteIds = null;
-      showMessage("Маршрут подтверждён. Кроссворд готов — нажмите на клетки слова.", "success");
+      showMessage(t("route_confirmed"), "success");
     } catch (error) {
       applyProjectionError(error);
       if (error.status && error.status < 500) state.retryRouteIds = null;
@@ -1464,7 +1468,7 @@
       ) {
         state.retryRouteIds = null;
         await loadGame();
-        showMessage("Состояние раунда изменилось. Данные страницы обновлены.");
+        showMessage("The round status has changed. The page data has been updated.");
         return;
       }
       if (error.code === "crossword_generation_failed") {
@@ -1474,7 +1478,7 @@
           state.selectedCityIds = [];
           state.player = error.player;
           renderPlayer();
-          showMessage("Для выбранного пути не удалось подготовить слова. Присоединитесь к раунду и выберите другой маршрут.");
+          showMessage(t("error_words"));
         } else {
           showMessage(error.message);
           updateRouteControls();
@@ -1483,10 +1487,10 @@
       } else if (error.code === "round_not_active") {
         state.retryRouteIds = null;
         await loadGame();
-        showMessage("Раунд завершён. Данные страницы обновлены.");
+        showMessage(t("mess_game_finished"));
       } else {
         showMessage(state.retryRouteIds
-          ? `${error.message} Повторите подтверждение того же маршрута.`
+          ? `${error.message} ${t("error_confirm")}`
           : error.message);
       }
     } finally {
@@ -1524,7 +1528,7 @@
         cityPath.length !== result.route_ids.length + 1
         || cityPath.at(-1) !== result.player.target_city_id
       ) {
-        throw new Error("Сервер вернул некорректный маршрут. Попробуйте ещё раз.");
+        throw new Error(t("error_marshroot"));
       }
 
       state.selectedRouteIds = [...result.route_ids];
@@ -1571,6 +1575,26 @@
       ? 0.85
       : 1;
     elements.mapCanvas.style.zoom = String(Number(selectedScale.value) * mobileScale); 
+  }
+
+  function formatWordLetters(count, locale = 'ru') {
+    const pr = new Intl.PluralRules(locale);
+    const rule = pr.select(count);
+
+    const translations = {
+      ru: {
+        one: `В слове ${count} буква`,
+        few: `В слове ${count} буквы`,
+        many: `В слове ${count} букв`,
+        other: `В слове ${count} буквы`, // для дробных чисел, например 1.5
+      },
+      en: {
+        one: `The word has ${count} letter`,
+        other: `The word has ${count} letters`,
+      }
+    };
+    
+    return translations[locale][rule];
   }
 
   // Отрабатываем событие перетаскивания мышкой с нажатым контролом

@@ -14,6 +14,7 @@ WORKDIR /app/backend
 
 COPY backend/ ./
 COPY frontend/ /app/frontend/
+COPY locales/ /app/locales/
 
 EXPOSE 8000
 

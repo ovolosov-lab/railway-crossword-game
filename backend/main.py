@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.exceptions import RequestValidationError
@@ -40,11 +40,17 @@ from app.game_state import ActiveGame, GameFinishedError, PrevGame
 from app.game_sessions import GameSessions
 from app.game_segments import GameSegments
 from app.game_victories import GameVictories
+from app.i18n import load_translations
 from app.models import User
 from app.periodic_task import AsyncPeriodicTask
 from app.security import get_authenticated_user
 
 settings = get_settings()
+
+
+def page_context(**extra: Any) -> dict[str, Any]:
+    """Template context shared by all pages: language plus localized strings."""
+    return {**load_translations(settings.language).template_context(), **extra}
 
 
 @asynccontextmanager
@@ -54,6 +60,8 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     periodic_tasks: list[AsyncPeriodicTask] = []
     redis_client = None
     try:
+        # Fail fast on a missing or malformed locale file, before any other startup work.
+        load_translations(settings.language)
         await check_database_connection()
         application.state.game_lock = asyncio.Lock()
         application.state.game_settings = settings
@@ -279,6 +287,7 @@ async def login_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request=request,
         name="login.html",
+        context=page_context(),
     )
 
 
@@ -287,6 +296,7 @@ async def register_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request=request,
         name="register.html",
+        context=page_context(),
     )
 
 
@@ -301,11 +311,11 @@ async def game_page(
     return templates.TemplateResponse(
         request=request,
         name="game.html",
-        context={
-            "username": user.username,
-            "csrf_cookie_name": settings.csrf_cookie_name,
-            "frontend_sync_interval": settings.frontend_sync_interval,
-        },
+        context=page_context(
+            username=user.username,
+            csrf_cookie_name=settings.csrf_cookie_name,
+            frontend_sync_interval=settings.frontend_sync_interval,
+        ),
     )
 
 
