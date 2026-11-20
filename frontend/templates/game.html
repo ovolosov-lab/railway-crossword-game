@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-cookie-name" content="{{ csrf_cookie_name }}">
-    <title>Игра — Железная дорога (чайнворд)</title>
+    <title>{{ html_title }}</title>
     <link rel="stylesheet" href="/static/auth.css">
     <link rel="stylesheet" href="/static/game.css">
     <link rel="icon" href="/static/favicon.ico" sizes="any">
@@ -22,23 +22,23 @@
     >
       <section class="game-layout" aria-labelledby="game-title">
         <aside class="game-panel">
-          <p class="eyebrow">Игра для вечеринок</p>
-          <h1 id="game-title" class="game-title">Разгадай чайнворд</h1>
-          <p class="intro">Соедините начальный и конечный города непрерывной цепочкой железных дорог и разгадайте чайнворд.</p>
+          <p class="eyebrow">{{ subtitle }}</p>
+          <h1 id="game-title" class="game-title">{{ game_title }}</h1>
+          <p class="intro">{{ intro }}</p>
 
           <div class="round-summary" aria-live="polite" id="timer-block">
             <div>
-              <span class="summary-label">До конца раунда</span>
+              <span class="summary-label">{{ summary_label }}</span>
               <strong id="round-timer">Загрузка…</strong>
             </div>
-            <span class="round-status" id="round-status">Загружаем игру</span>
+            <span class="round-status" id="round-status">{{ session_status }}</span>
           </div>
 
           <div class="game-message" id="game-message" role="status" hidden></div>
-          <div class="game-loading" id="game-loading" role="status">Загружаем карту и статистику…</div>
+          <div class="game-loading" id="game-loading" role="status">{{ game_loading }}</div>
 
           <section class="player-card" id="player-card" aria-live="polite" hidden>
-            <h2 id="player-heading">Статистика раунда</h2>
+            <h2 id="player-heading">{{ statistics }}</h2>
             <p id="player-description"></p>
             <p class="player-score" id="player-score" hidden></p>
             <div class="assigned-cities" id="assigned-cities" hidden></div>
@@ -48,40 +48,40 @@
                 class="auto-route-button"
                 id="auto-route-button"
                 type="button"
-                title="Проложить путь автоматически"
-                aria-label="Проложить путь автоматически"
+                title="{{ auto_route }}"
+                aria-label="{{ auto_route }}"
                 hidden
               >🤖</button>
             </p>
-            <button class="game-button" id="join-button" type="button" hidden>Присоединиться к раунду</button>
-            <button class="game-button" id="confirm-route-button" type="button" hidden disabled>Подтвердить маршрут</button>
-            <button class="game-button hidden" id="play-with-train" type="button" disabled>Хочу еще поезд!</button>
+            <button class="game-button" id="join-button" type="button" hidden>{{ join_button }}</button>
+            <button class="game-button" id="confirm-route-button" type="button" hidden disabled>{{ confirm_route_button }}</button>
+            <button class="game-button hidden" id="play-with-train" type="button" disabled>{{ play_with_train }}</button>
           </section>
 
           <section class="leaderboard" aria-labelledby="leaderboard-title">
             <div class="section-heading">
-              <h2 id="leaderboard-title">Таблица победителей</h2>
-              <span class="participant-count" id="participant-count">Участников: —</span>
+              <h2 id="leaderboard-title">{{ leaderboard_title }}</h2>
+              <span class="participant-count" id="participant-count">{{ participant_count }}</span>
             </div>
             <div class="leaderboard-div">
             <ol id="leaderboard-list" class="leaderboard-list">
-              <li class="leaderboard-empty">Загружаем рейтинг…</li>
+              <li class="leaderboard-empty">{{ leaderboard_empty }}</li>
             </ol>
             </div>
           </section>
         </aside>
 
-        <section class="map-panel" aria-label="Игровая карта">
+        <section class="map-panel" aria-label="{{ map_panel }}">
           <div class="map-toolbar">
-            <a class="brand map-brand" href="/" aria-label="Железная дорога — главная">
+            <a class="brand map-brand" href="/" aria-label="{{ aria_label_main }}">
               <!-- <span class="brand-mark" aria-hidden="true">🛤️</span> -->
               <img src="/static/img/loco.jpg" height="25" width="60"> 
-              <span class="game-title">Железная дорога</span>
+              <span class="game-title">{{ game_title2 }}</span>
             </a>
-            <p class="game-user">Игрок: <strong>{{ username }}</strong></p>
-            <span id="map-help">Выберите участки на карте</span>
+            <p class="game-user">{{ game_user }} <strong>{{ username }}</strong></p>
+            <span id="map-help">{{ map_help }}</span>
           </div>
-          <div class="map-scroll" id="map-scroll" tabindex="0" aria-label="Прокручиваемая карта">
+          <div class="map-scroll" id="map-scroll" tabindex="0" aria-label="{{ map_scroll }}">
             <div class="map-canvas" id="map-canvas">
               {% include "map.svg" %}
               <svg
@@ -91,7 +91,7 @@
                 height="3000"
                 viewBox="0 0 4000 3000"
                 role="img"
-                aria-label="Города и железнодорожные участки"
+                aria-label="{{ aria_label_cities }}"
               ></svg>
               <svg
                 class="victory-train-overlay"
@@ -104,12 +104,12 @@
             </div>
           </div>
           <div class="map-footnote">
-            <span class="map-scroll-hint">Прокрутить карту: Ctrl + Click. На телефоне проведите по ней пальцем.</span>
-            <span class="map-legend" aria-label="Обозначения карты">
-              <span><i class="legend-dot legend-traget"></i>Ваши города отправления и назначения</span>
+            <span class="map-scroll-hint">{{ map_scroll_hint }}</span>
+            <span class="map-legend" aria-label="{{ map_legend }}">
+              <span><i class="legend-dot legend-traget"></i>{{ legend_traget }}</span>
             </span>
             <fieldset class="map-scale-control">
-              <legend>Масштаб</legend>
+              <legend>{{ map_scale }}</legend>
               <label><input type="radio" name="map-scale" value="0.7">70%</label>
               <label><input type="radio" name="map-scale" value="0.85">85%</label>
               <label><input type="radio" name="map-scale" value="1" checked>100%</label>
@@ -119,8 +119,8 @@
       </section>
     </main>
 
-    <div class="victory-overlay" id="victory-overlay" role="status" aria-label="Поздравляем с победой" hidden>
-      <img src="/static/img/mazer.svg" alt="Кубок победителя" class="victory-trophy">
+    <div class="victory-overlay" id="victory-overlay" role="status" aria-label="{{ victory_greet }}" hidden>
+      <img src="/static/img/mazer.svg" alt="{{ trophy }}" class="victory-trophy">
       <img
         src="/static/img/locomotive.gif"
         alt=""
@@ -135,14 +135,14 @@
       <form class="word-dialog-content" id="guess-form">
         <div class="word-dialog-heading">
           <div>
-            <p class="eyebrow">Слово чайнворда</p>
-            <h2 id="word-dialog-title">Определение</h2>
+            <p class="eyebrow">{{ the_word }}</p>
+            <h2 id="word-dialog-title">{{ word_dialog_title }}</h2>
           </div>
-          <button class="dialog-close" id="close-word-dialog" type="button" aria-label="Закрыть">×</button>
+          <button class="dialog-close" id="close-word-dialog" type="button" aria-label="{{ close }}">×</button>
         </div>
         <p class="word-definition" id="word-definition"></p>
         <p class="word-length" id="word-length"></p>
-        <label class="guess-label" for="word-answer">Ваш ответ</label>
+        <label class="guess-label" for="word-answer">{{ your_answer }}</label>
         <input
           class="guess-input"
           id="word-answer"
@@ -152,13 +152,13 @@
           autocomplete="off"
           required
         >
-        <button class="game-button" id="submit-guess" type="submit">Проверить ответ</button>
+        <button class="game-button" id="submit-guess" type="submit">{{ submit_guess }}</button>
         <p class="word-feedback" id="word-feedback" aria-live="polite"></p>
         <div class="word-hints">
-          <p>Подсказки</p>
+          <p>{{ hints }}</p>
           <div class="hint-buttons">
-            <button class="hint-button" id="first-letter-hint" type="button">Первая буква</button>
-            <button class="hint-button" id="last-letter-hint" type="button">Последняя буква</button>
+            <button class="hint-button" id="first-letter-hint" type="button">{{ first_hint }}</button>
+            <button class="hint-button" id="last-letter-hint" type="button">{{ last_hint }}</button>
           </div>
           <p class="hint-feedback" id="hint-feedback" aria-live="polite"></p>
         </div>
