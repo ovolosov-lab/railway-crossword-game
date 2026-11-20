@@ -20,6 +20,8 @@ class ApiException(HTTPException):
         details: dict[str, Any] | list[dict[str, Any]] | None = None,
         round_projection: dict[str, Any] | None = None,
         player_projection: dict[str, Any] | None = None,
+        session_projection: dict[str, Any] | None = None,
+        continuous: bool = False,
         headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(status_code=status_code, detail=message, headers=headers)
@@ -27,6 +29,9 @@ class ApiException(HTTPException):
         self.details = details
         self.round_projection = round_projection
         self.player_projection = player_projection
+        self.session_projection = session_projection
+        # Continuous-game errors describe a session instead of a shared round.
+        self.continuous = continuous or session_projection is not None
 
 
 _ERROR_CODES_BY_STATUS = {
@@ -50,16 +55,29 @@ def _error_response(
     details: dict[str, Any] | list[dict[str, Any]] | None = None,
     round_projection: dict[str, Any] | None = None,
     player_projection: dict[str, Any] | None = None,
+    session_projection: dict[str, Any] | None = None,
+    continuous: bool = False,
     headers: dict[str, str] | None = None,
 ) -> JSONResponse:
-    response_model = ApiErrorResponse(
-        error=ErrorProjection(code=code, message=message, details=details),
-        round=round_projection,
-        player=player_projection,
-    )
+    if continuous:
+        content: dict[str, Any] = jsonable_encoder(
+            {"error": ErrorProjection(code=code, message=message, details=details)}
+        )
+        if session_projection is not None:
+            content["session"] = session_projection
+        if player_projection is not None:
+            content["player"] = player_projection
+    else:
+        content = jsonable_encoder(
+            ApiErrorResponse(
+                error=ErrorProjection(code=code, message=message, details=details),
+                round=round_projection,
+                player=player_projection,
+            )
+        )
     return JSONResponse(
         status_code=status_code,
-        content=jsonable_encoder(response_model),
+        content=content,
         headers=headers,
     )
 
@@ -77,6 +95,8 @@ async def api_exception_handler(
             details=exc.details,
             round_projection=exc.round_projection,
             player_projection=exc.player_projection,
+            session_projection=exc.session_projection,
+            continuous=exc.continuous,
             headers=exc.headers,
         )
 

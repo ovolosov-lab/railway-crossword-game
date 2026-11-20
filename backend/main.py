@@ -23,7 +23,7 @@ from starlette.requests import Request
 from app.admin_api import router as admin_router
 from app.api_errors import api_exception_handler, request_validation_exception_handler
 from app.config import Settings, get_settings
-from app.database import engine, get_db
+from app.database import engine, get_db, AsyncSessionLocal
 from app.game_generation import (
     GameGeneration,
     GameGenerationUnavailable,
@@ -31,8 +31,15 @@ from app.game_generation import (
     create_redis_client,
 )
 from app.auth import router as auth_router
+from app.continuous_game_api import (
+    router as continuous_game_router,
+    write_router as continuous_game_write_router,
+)
 from app.game_api import router as game_router, write_router as game_write_router
 from app.game_state import ActiveGame, GameFinishedError, PrevGame
+from app.game_sessions import GameSessions
+from app.game_segments import GameSegments
+from app.game_victories import GameVictories
 from app.models import User
 from app.periodic_task import AsyncPeriodicTask
 from app.security import get_authenticated_user
@@ -44,18 +51,27 @@ settings = get_settings()
 async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     """Initialize database and game lifecycle services for the application."""
     logger.info("Starting {}", settings.app_name)
-    periodic_task: AsyncPeriodicTask | None = None
+    periodic_tasks: list[AsyncPeriodicTask] = []
     redis_client = None
     try:
         await check_database_connection()
         application.state.game_lock = asyncio.Lock()
         application.state.game_settings = settings
         application.state.game_generation = None
+        application.state.game_sessions = None
+        application.state.game_segments = None
+        application.state.game_victories = None
         if settings.redis_url is not None:
             redis_client = create_redis_client(settings.redis_url)
             try:
                 application.state.game_generation = await GameGeneration.load_current(
                     redis_client
+                )
+                application.state.game_sessions = GameSessions(application.state.game_generation)
+                application.state.game_segments = GameSegments(application.state.game_sessions)
+                application.state.game_victories = await GameVictories.create(
+                    application.state.game_sessions,
+                    AsyncSessionLocal,
                 )
             except (RedisError, GameGenerationUnavailable):
                 logger.exception(
@@ -74,20 +90,39 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         application.state.prevGame = PrevGame()
         logger.info("Created initial game round {}", application.state.activeGame.game_id)
 
-        periodic_task = AsyncPeriodicTask(
-            interval=settings.check_interval,
-            task_func=partial(
-                check_game_duration,
-                application,
-                app_settings=settings,
-            ),
+        periodic_tasks.append(
+            AsyncPeriodicTask(
+                interval=settings.check_interval,
+                task_func=partial(
+                    check_game_duration,
+                    application,
+                    app_settings=settings,
+                ),
+            )
         )
-        periodic_task.start()
+
+        if application.state.game_victories is not None:
+            periodic_tasks.append(
+                AsyncPeriodicTask(
+                    interval=settings.check_interval,
+                    task_func=partial(
+                        retry_pending_victories,
+                        application,
+                    ),
+                )
+            )
+
+        for task in periodic_tasks:
+            task.start()
+
         yield
     finally:
         try:
-            if periodic_task is not None:
-                await periodic_task.stop()
+            for task in periodic_tasks:
+                try:
+                    await task.stop()
+                except Exception:
+                    logger.exception("Error stopping periodic task")
         finally:
             try:
                 if redis_client is not None:
@@ -137,6 +172,26 @@ async def check_game_duration(
             )
             application.state.activeGame = next_game
             logger.info("Created next game round {}", next_game.game_id)
+
+
+async def retry_pending_victories(application: FastAPI) -> None:
+    """Process pending victories from the queue using the generation guard."""
+    game_victories: GameVictories | None = getattr(
+        application.state,
+        "game_victories",
+        None,
+    )
+    if game_victories is None:
+        return
+
+    try:
+        await game_victories.retry_pending()
+    except StaleGameGeneration:
+        logger.warning(
+            "Skipping pending-victory retry: worker belongs to stale game generation"
+        )
+    except (RedisError, SQLAlchemyError):
+        logger.exception("Error processing pending victories; will retry next cycle")
 
 
 app = FastAPI(
@@ -191,8 +246,12 @@ async def fence_stale_game_worker(request: Request, call_next):
 
 app.include_router(auth_router)
 app.include_router(admin_router)
-app.include_router(game_router)
-app.include_router(game_write_router)
+if settings.continuous_game_enabled:
+    app.include_router(continuous_game_router)
+    app.include_router(continuous_game_write_router)
+else:
+    app.include_router(game_router)
+    app.include_router(game_write_router)
 project_root = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(
     directory=[

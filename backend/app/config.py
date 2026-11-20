@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     db_port: int | None = Field(default=None, ge=1, le=65535)
     db_name: str | None = None
     redis_url: SecretStr | None = Field(default=None, repr=False)
+    continuous_game_enabled: bool = False
     jwt_secret: SecretStr = Field(default=SecretStr(""), repr=False)
     jwt_algorithm: Literal["HS256"] = "HS256"
     access_token_expire_minutes: int = Field(default=120, ge=1)
@@ -54,6 +55,12 @@ class Settings(BaseSettings):
         if len(value.get_secret_value().encode("utf-8")) < 32:
             raise ValueError("JWT_SECRET must contain at least 32 UTF-8 bytes.")
         return value
+
+    @model_validator(mode="after")
+    def validate_continuous_game_requirements(self) -> "Settings":
+        if self.continuous_game_enabled and self.redis_url is None:
+            raise ValueError("CONTINUOUS_GAME_ENABLED requires REDIS_URL.")
+        return self
 
     @property
     def sqlalchemy_database_url(self) -> str:

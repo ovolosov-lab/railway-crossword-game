@@ -6,18 +6,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
 from pydantic import SecretStr
+from redis.exceptions import RedisError
 
 from app.config import Settings
 from app.game_generation import GameGenerationUnavailable, StaleGameGeneration
 from app.game_state import ActiveGame, PrevGame
+from app.game_sessions import GameSessions
+from app.game_segments import GameSegments
+from app.game_victories import GameVictories
 from app.periodic_task import AsyncPeriodicTask
-from main import check_game_duration, fence_stale_game_worker, lifespan
+from main import check_game_duration, fence_stale_game_worker, lifespan, retry_pending_victories
 
 
 def test_settings() -> Settings:
     return Settings(
         jwt_secret=SecretStr("test-secret-for-game-lifecycle-tests-only"),
         language="ru",
+        redis_url=None,
         game_duration_hours=1,
         check_interval=1,
     )
@@ -203,6 +208,9 @@ class GameLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(application.state.activeGame.status, "active")
                 self.assertIsInstance(application.state.game_lock, asyncio.Lock)
                 self.assertIsInstance(application.state.prevGame, PrevGame)
+                self.assertIsNone(application.state.game_sessions)
+                self.assertIsNone(application.state.game_segments)
+                self.assertIsNone(application.state.game_victories)
 
         self.assertEqual(
             events,
@@ -250,6 +258,60 @@ class GameLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
         redis_client.aclose.assert_awaited_once()
         mocked_engine.dispose.assert_awaited_once()
+
+    async def test_lifespan_exposes_sessions_for_the_loaded_generation(self) -> None:
+        application = FastAPI()
+        configured_settings = self.settings.model_copy(
+            update={"redis_url": SecretStr("redis://redis:6379/0")}
+        )
+        redis_client = MagicMock()
+        redis_client.aclose = AsyncMock()
+        generation = MagicMock()
+        generation.generation_id = "test-generation"
+        background_task = MagicMock()
+        background_task.stop = AsyncMock()
+        mocked_engine = MagicMock()
+        mocked_engine.dispose = AsyncMock()
+        with (
+            patch("main.settings", configured_settings),
+            patch("main.check_database_connection", new_callable=AsyncMock),
+            patch("main.create_redis_client", return_value=redis_client),
+            patch("main.GameGeneration.load_current", new_callable=AsyncMock, return_value=generation),
+            patch("main.AsyncPeriodicTask", return_value=background_task) as task_class,
+            patch("main.engine", mocked_engine),
+        ):
+            async with lifespan(application):
+                self.assertIsInstance(application.state.game_sessions, GameSessions)
+                self.assertIs(application.state.game_sessions.generation, generation)
+                self.assertIsInstance(application.state.game_segments, GameSegments)
+                self.assertIs(application.state.game_segments.sessions, application.state.game_sessions)
+                self.assertIsInstance(application.state.game_victories, GameVictories)
+                self.assertIs(application.state.game_victories.generation, generation)
+                scheduled = [
+                    call.kwargs["task_func"].func for call in task_class.call_args_list
+                ]
+                self.assertIn(retry_pending_victories, scheduled)
+        redis_client.aclose.assert_awaited_once()
+
+    async def test_retry_pending_victories_processes_queue(self) -> None:
+        application = FastAPI()
+        application.state.game_victories = MagicMock()
+        application.state.game_victories.retry_pending = AsyncMock()
+        await retry_pending_victories(application)
+        application.state.game_victories.retry_pending.assert_awaited_once()
+
+    async def test_retry_pending_victories_is_noop_without_redis(self) -> None:
+        application = FastAPI()
+        application.state.game_victories = None
+        await retry_pending_victories(application)
+
+    async def test_retry_pending_victories_survives_stale_generation_and_redis_errors(self) -> None:
+        for error in (StaleGameGeneration("stale"), RedisError("down")):
+            with self.subTest(error=type(error).__name__):
+                application = FastAPI()
+                application.state.game_victories = MagicMock()
+                application.state.game_victories.retry_pending = AsyncMock(side_effect=error)
+                await retry_pending_victories(application)
 
     async def test_stale_worker_requests_fail_closed(self) -> None:
         application = FastAPI()

@@ -7,6 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.game_generation import GameGeneration, StaleGameGeneration
 from app.models import GameResult, User
 
 
@@ -63,12 +64,22 @@ async def find_session_victory(
 async def persist_session_victory(
     session: AsyncSession,
     victory: SessionVictory,
+    *,
+    generation: GameGeneration | None = None,
 ) -> bool:
     """Commit a session victory and score together; return whether it was new.
 
     The caller must pass a session without an active transaction. If commit's
     outcome is unknown, discard it and reconcile with a fresh primary-DB session.
+
+    If generation is provided, it is checked before the transaction and again after
+    the writes, immediately before commit; StaleGameGeneration rolls the transaction
+    back. Redis and PostgreSQL cannot share a transaction, so a generation change
+    in the final instant between that check and commit remains possible.
     """
+    if generation is not None:
+        await generation.assert_current()
+
     async with session.begin():
         statement = (
             insert(GameResult)
@@ -105,4 +116,6 @@ async def persist_session_victory(
                 )
                 raise RuntimeError("The session victory winner does not exist.")
             created = True
+        if generation is not None:
+            await generation.assert_current()
     return created
