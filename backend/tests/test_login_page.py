@@ -195,7 +195,7 @@ class LoginPageTests(unittest.TestCase):
         self.assertIn("width: calc(100% - 32px)", stylesheet.text)
         self.assertIn("width: min(315px, 26.35%)", stylesheet.text)
         self.assertIn("grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr)", stylesheet.text)
-        self.assertIn("padding: 8px 0 36px", stylesheet.text)
+        self.assertIn("margin: 10px 4px 1px", stylesheet.text)
         self.assertIn("animation: victory-trophy-bob", stylesheet.text)
         self.assertIn("width: clamp(120px, 14vw, 210px)", stylesheet.text)
         self.assertIn("height: 88vh", stylesheet.text)

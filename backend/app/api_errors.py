@@ -7,6 +7,8 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from app.config import get_settings
+from app.i18n import load_translations
 from app.schemas import ApiErrorResponse, ErrorProjection
 
 
@@ -86,12 +88,13 @@ async def api_exception_handler(
     request: Request,
     exc: HTTPException,
 ) -> JSONResponse:
-    del request
+    settings = getattr(request.app.state, "game_settings", None) or get_settings()
+    api_messages = load_translations(settings.language).api
     if isinstance(exc, ApiException):
         return _error_response(
             status_code=exc.status_code,
             code=exc.code,
-            message=str(exc.detail),
+            message=api_messages.get(exc.code, str(exc.detail)),
             details=exc.details,
             round_projection=exc.round_projection,
             player_projection=exc.player_projection,
@@ -100,10 +103,11 @@ async def api_exception_handler(
             headers=exc.headers,
         )
 
+    code = _ERROR_CODES_BY_STATUS.get(exc.status_code, "http_error")
     return _error_response(
         status_code=exc.status_code,
-        code=_ERROR_CODES_BY_STATUS.get(exc.status_code, "http_error"),
-        message=str(exc.detail),
+        code=code,
+        message=api_messages.get(code, str(exc.detail)),
         headers=exc.headers,
     )
 
@@ -112,7 +116,8 @@ async def request_validation_exception_handler(
     request: Request,
     exc: RequestValidationError,
 ) -> JSONResponse:
-    del request
+    settings = getattr(request.app.state, "game_settings", None) or get_settings()
+    validation_message = load_translations(settings.language).api["validation_error"]
     validation_errors = exc.errors()
     malformed_json = any(error.get("type") == "json_invalid" for error in validation_errors)
     status_code = (
@@ -123,7 +128,7 @@ async def request_validation_exception_handler(
     details = [
         {
             "location": [str(part) for part in error.get("loc", ())],
-            "message": str(error.get("msg", "Invalid value")),
+            "message": validation_message,
             "type": str(error.get("type", "value_error")),
         }
         for error in validation_errors
@@ -131,6 +136,6 @@ async def request_validation_exception_handler(
     return _error_response(
         status_code=status_code,
         code=_ERROR_CODES_BY_STATUS[status_code],
-        message="Request body or query parameters are invalid.",
+        message=validation_message,
         details=details,
     )

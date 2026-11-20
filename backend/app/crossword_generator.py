@@ -21,7 +21,7 @@ from app.game_segments import WordProposal, normalize_answer
 
 CELL_WIDTH_PX = 26
 MIN_GAP_PX = 5
-TWO_LETTER_WORD = 2
+SHORT_WORD_MAX_LETTERS = 2
 SMALL_SEGMENT_MAX_CELLS = 31
 SMALL_SEGMENT_FREE_TARGET_PX = 52
 LARGE_SEGMENT_FREE_TARGET_PX = 78
@@ -32,19 +32,19 @@ class CrosswordGenerationError(ValueError):
     """The generator input cannot describe a valid crossword layout."""
 
 
-class TwoLetterAction(Enum):
-    """The three ADR 0007 actions for a two-letter candidate."""
+class ShortWordAction(Enum):
+    """The three ADR 0007 actions for a one- or two-letter candidate."""
 
     KEEP = "keep"
     LONGER = "longer"
     EMPTY = "empty"
 
 
-ActionChooser = Callable[[random.Random], TwoLetterAction]
+ActionChooser = Callable[[random.Random], ShortWordAction]
 
 
-def random_action(rng: random.Random) -> TwoLetterAction:
-    return rng.choice(list(TwoLetterAction))
+def random_action(rng: random.Random) -> ShortWordAction:
+    return rng.choice(list(ShortWordAction))
 
 
 @dataclass(frozen=True)
@@ -134,14 +134,14 @@ def _fill(
         if not options:
             return words
         pick = rng.choice(options)
-        if pick.letters == TWO_LETTER_WORD:
+        if pick.letters <= SHORT_WORD_MAX_LETTERS:
             action = choose_action(rng)
-            if action is TwoLetterAction.EMPTY:
+            if action is ShortWordAction.EMPTY:
                 if words:
                     return words
                 # A segment must not become empty only because of this random choice.
-                action = TwoLetterAction.LONGER
-            if action is TwoLetterAction.LONGER:
+                action = ShortWordAction.LONGER
+            if action is ShortWordAction.LONGER:
                 replaced = _longer_replacement(
                     available_px, pool, blocked, words, pick, rng
                 )
@@ -156,18 +156,18 @@ def _longer_replacement(
     pool: Sequence[WordCandidate],
     blocked: frozenset[str],
     words: list[WordCandidate],
-    two_letter: WordCandidate,
+    short_word: WordCandidate,
     rng: random.Random,
 ) -> list[WordCandidate] | None:
-    """Replace the two-letter word and the previous word with one longer word."""
+    """Replace a one- or two-letter word and its predecessor with one longer word."""
     kept = words[:-1]
     previous = words[-1] if words else None
-    minimum = max(two_letter.cells, previous.cells if previous else 0)
+    minimum = max(short_word.cells, previous.cells if previous else 0)
     used = blocked | {word.key for word in kept}
     options = [
         word for word in pool
         if word.cells > minimum
-        and word.letters > TWO_LETTER_WORD
+        and word.letters > SHORT_WORD_MAX_LETTERS
         and word.key not in used
         and _width([*kept, word]) <= available_px
     ]
@@ -178,8 +178,10 @@ def _longer_replacement(
 
 def _score(words: Sequence[WordCandidate], spec: SegmentSpec) -> tuple[bool, int, int]:
     free = spec.available_px - _width(words)
-    two_letter = sum(1 for word in words if word.letters == TWO_LETTER_WORD)
-    return free > spec.free_space_target_px, two_letter, free
+    short_words = sum(
+        1 for word in words if word.letters <= SHORT_WORD_MAX_LETTERS
+    )
+    return free > spec.free_space_target_px, short_words, free
 
 
 def _place(
@@ -216,7 +218,8 @@ def generate_segment_proposals(
     segments of the route; a word is used at most once per route. Segments with
     no fitting word get an empty list. With ``attempts`` greater than one, the
     best of several randomized layouts is kept: first the one reaching the
-    free-space target, then the fewest two-letter words, then the least free space.
+    free-space target, then the fewest one- and two-letter words, then the least
+    free space.
     """
     if attempts < 1:
         raise CrosswordGenerationError("At least one generation attempt is required.")

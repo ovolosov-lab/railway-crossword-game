@@ -14,7 +14,7 @@ from app.crossword_generator import (
     MIN_GAP_PX,
     CrosswordGenerationError,
     SegmentSpec,
-    TwoLetterAction,
+    ShortWordAction,
     WordCandidate,
     generate_segment_proposals,
     route_is_empty,
@@ -31,15 +31,15 @@ def word(word_id: int, text: str) -> WordCandidate:
 
 
 def keep(_rng):
-    return TwoLetterAction.KEEP
+    return ShortWordAction.KEEP
 
 
 def longer(_rng):
-    return TwoLetterAction.LONGER
+    return ShortWordAction.LONGER
 
 
 def empty(_rng):
-    return TwoLetterAction.EMPTY
+    return ShortWordAction.EMPTY
 
 
 def texts(proposals) -> list[str]:
@@ -128,9 +128,26 @@ class GeneratorTests(LayoutAssertions):
         )[1]
         self.assertEqual(sorted(texts(proposals)), ["go", "to", "up"])
 
+    def test_keep_action_also_uses_one_letter_words(self) -> None:
+        spec = SegmentSpec(1, 4, 104)
+        pool = [word(1, "I"), word(2, "a")]
+        proposals = generate_segment_proposals(
+            [spec], pool, rng=random.Random(2), choose_action=keep
+        )[1]
+        self.assertEqual(sorted(texts(proposals)), ["I", "a"])
+
     def test_empty_action_leaves_remaining_space_empty(self) -> None:
         spec = SegmentSpec(1, 10, 260)
         pool = [word(1, "station"), word(2, "to")]
+        for seed in range(10):
+            proposals = generate_segment_proposals(
+                [spec], pool, rng=random.Random(seed), choose_action=empty
+            )[1]
+            self.assertEqual(texts(proposals), ["station"])
+
+    def test_empty_action_does_not_empty_a_segment_for_a_one_letter_word(self) -> None:
+        spec = SegmentSpec(1, 10, 260)
+        pool = [word(1, "station"), word(2, "I")]
         for seed in range(10):
             proposals = generate_segment_proposals(
                 [spec], pool, rng=random.Random(seed), choose_action=empty
@@ -155,6 +172,16 @@ class GeneratorTests(LayoutAssertions):
             self.assertNotIn("to", texts(proposals))
             self.assertTrue(set(texts(proposals)) <= {"cat", "railway"})
 
+    def test_longer_action_replaces_previous_and_one_letter_words(self) -> None:
+        spec = SegmentSpec(1, 7, 182)
+        pool = [word(1, "cat"), word(2, "I"), word(3, "railway")]
+        for seed in range(20):
+            proposals = generate_segment_proposals(
+                [spec], pool, rng=random.Random(seed), choose_action=longer
+            )[1]
+            self.assertNotIn("I", texts(proposals))
+            self.assertTrue(set(texts(proposals)) <= {"cat", "railway"})
+
     def test_failed_replacement_falls_back_to_the_original_layout(self) -> None:
         spec = SegmentSpec(1, 8, 208)
         pool = [word(1, "to"), word(2, "go")]
@@ -162,6 +189,15 @@ class GeneratorTests(LayoutAssertions):
             [spec], pool, rng=random.Random(5), choose_action=longer
         )[1]
         self.assertEqual(sorted(texts(proposals)), ["go", "to"])
+        self.assert_valid_layout(spec, proposals)
+
+    def test_failed_replacement_falls_back_to_a_one_letter_word(self) -> None:
+        spec = SegmentSpec(1, 4, 104)
+        pool = [word(1, "I"), word(2, "a")]
+        proposals = generate_segment_proposals(
+            [spec], pool, rng=random.Random(5), choose_action=longer
+        )[1]
+        self.assertEqual(sorted(texts(proposals)), ["I", "a"])
         self.assert_valid_layout(spec, proposals)
 
     def test_replacement_must_fit_with_separators(self) -> None:
@@ -287,10 +323,12 @@ class RealCatalogComparisonTests(LayoutAssertions):
         cls.by_id = {word.id: word for word in cls.catalog}
         cls.segments = _real_segments()
 
-    def two_letter_share(self, layouts) -> float:
+    def letter_count_share(self, layouts, letter_count: int) -> float:
         total = sum(len(words) for words in layouts)
-        two = sum(1 for words in layouts for w in words if w.letters == 2)
-        return two / total
+        matching = sum(
+            1 for words in layouts for word in words if word.letters == letter_count
+        )
+        return matching / total
 
     def generated(self, seed: int, attempts: int):
         proposals = generate_segment_proposals(
@@ -303,18 +341,23 @@ class RealCatalogComparisonTests(LayoutAssertions):
             for spec in self.segments
         ], proposals
 
-    def test_two_letter_share_is_lower_than_the_previous_algorithm(self) -> None:
+    def test_one_and_two_letter_shares_are_lower_than_the_previous_algorithm(self) -> None:
         legacy, single, best = [], [], []
         for seed in self.SEEDS:
             rng = random.Random(seed)
             legacy += [legacy_layout(spec, self.catalog, rng) for spec in self.segments]
             single += self.generated(seed, attempts=1)[0]
             best += self.generated(seed, attempts=6)[0]
-        old_share = self.two_letter_share(legacy)
-        # Measured on this catalog: about 8.4%, 3.9% and 0%.
-        self.assertGreater(old_share, 0.07)
-        self.assertLess(self.two_letter_share(single), old_share * 0.6)
-        self.assertLess(self.two_letter_share(best), 0.01)
+        old_shares = {
+            count: self.letter_count_share(legacy, count) for count in (1, 2)
+        }
+        for count in (1, 2):
+            with self.subTest(letter_count=count):
+                self.assertGreater(old_shares[count], 0.07)
+                self.assertLess(
+                    self.letter_count_share(single, count), old_shares[count] * 0.6
+                )
+                self.assertLess(self.letter_count_share(best, count), 0.01)
 
     def test_real_routes_get_words_and_reach_the_free_space_target(self) -> None:
         reached = total = 0

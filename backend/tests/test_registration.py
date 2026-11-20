@@ -7,8 +7,9 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.auth import password_context
 from app.database import get_db
+from app.i18n import load_translations
 from app.models import User
-from main import app
+from main import app, settings
 
 
 class UniqueConstraintError(Exception):
@@ -85,7 +86,7 @@ class RegistrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(
             response.json()["error"]["message"],
-            "Username or email is already registered",
+            load_translations(settings.language).api["conflict"],
         )
         self.assertEqual(response.json()["error"]["code"], "conflict")
         self.session.add.assert_not_called()
@@ -122,7 +123,7 @@ class RegistrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertEqual(
             response.json()["error"]["message"],
-            "Registration service is temporarily unavailable",
+            load_translations(settings.language).api["service_unavailable"],
         )
         self.assertEqual(response.json()["error"]["code"], "service_unavailable")
         self.session.add.assert_not_called()

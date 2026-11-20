@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="{{ lang }}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,9 +9,7 @@
     <link rel="stylesheet" href="/static/game.css">
     <link rel="icon" href="/static/favicon.ico" sizes="any">
     <script src="/static/confetti.js" defer></script>
-    <script>
-      window.I18N = {{ translations | tojson }};
-    </script>
+    <script id="i18n-data" type="application/json">{{ {"lang": lang, "js": translations} | tojson }}</script>
     <script src="/static/game.js" defer></script>
   </head>
   <body>
@@ -29,7 +27,7 @@
           <div class="round-summary" aria-live="polite" id="timer-block">
             <div>
               <span class="summary-label">{{ summary_label }}</span>
-              <strong id="round-timer">Загрузка…</strong>
+              <strong id="round-timer">{{ loading }}</strong>
             </div>
             <span class="round-status" id="round-status">{{ session_status }}</span>
           </div>

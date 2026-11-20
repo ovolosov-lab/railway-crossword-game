@@ -5,6 +5,15 @@
   const app = document.getElementById("game-app");
   if (!app) return;
 
+  const localizationElement = document.getElementById("i18n-data");
+  if (!localizationElement) throw new Error("Missing localization data.");
+  const localization = JSON.parse(localizationElement.textContent);
+  const locale = localization.lang;
+  if (locale !== "ru" && locale !== "en") {
+    throw new Error("Unsupported game language.");
+  }
+  const translations = localization.js;
+
   const elements = {
     timer: document.getElementById("round-timer"),
     timerBlock: document.getElementById("timer-block"),
@@ -76,14 +85,14 @@
     victoryConfettiTimer: null,
   };
 
-  const numberFormat = new Intl.NumberFormat("ru-RU");
+  const numberFormat = new Intl.NumberFormat(locale);
   let clickX = '35%';
   let clickY = '10%';
   let popupTimer = null;
   let popupElement = null;
 
   function t(key, fallback = '') {
-    return window.I18N?.[key] || fallback || key;
+    return translations?.[key] || fallback || key;
   }
 
   function showPopUpBlock(message, duration) {
@@ -567,9 +576,7 @@
       : t("word_dialog_title");
     elements.wordDefinition.textContent = placement.definition;
 
-    // const ending = placement.letter_count < 5 ? "ы" : "";
-    // elements.wordLength.textContent = `В слове ${placement.letter_count} букв${ending}.`;
-    elements.wordLength.textContent =  formatWordLetters(placement.letter_count, '{{ locale }}' );
+    elements.wordLength.textContent = formatWordLetters(placement.letter_count);
     elements.answer.disabled = (
       placement.is_guessed
       || state.player?.state !== "playing"
@@ -647,8 +654,8 @@
     const result = player.state === "won"
       ? t("message_won")
       : round.finish_reason === "timeout"
-        ? "The round time has run out. There is no winner."
-        : "The round has ended with a victory for the other player 😔";
+        ? t("round_timed_out")
+        : t("round_won_by_other");
     // console.log(player.state);
     elements.assignedCities.hidden = true; 
     elements.assignedCities.replaceChildren();       
@@ -1208,7 +1215,7 @@
     }
     elements.joinButton.disabled = !canJoin;
     if (state.player?.state === "watching_stats" && state.round?.status === "active" && state.round.remaining_seconds <= 60) {
-      elements.playerDescription.textContent = "It is no longer possible to join this round: there is at most a minute left.";
+      elements.playerDescription.textContent = t("join_deadline");
     }
   }
 
@@ -1220,7 +1227,7 @@
       selecting_route: [t("selecting_route"), t("help_selecting_route")],
       playing: [t("playing"), t("help_playing")],
       won: [t("map_help_finished"), ""],
-      lost: [t("map_help_finished"), "Another player finished the round first. Better luck next time!"],
+      lost: [t("map_help_finished"), t("player_lost")],
     };
     const [heading, description] = states[player.state] || states.watching_stats;
     elements.playerHeading.textContent = heading;
@@ -1361,7 +1368,7 @@
       renderPlayer();
       elements.loading.hidden = true;
       if (mapData.round.status === "being_created") {
-        showMessage("The next round is currently being created. Please refresh the page a little later.", "success");
+        showMessage(t("round_creating"), "success");
       } else if (
         mapData.round.id
         && ["playing", "won", "lost"].includes(mapData.player.state)
@@ -1401,10 +1408,10 @@
       renderPlayer();
       if (result.player.state === "watching_stats") {
         const message = result.round.status === "being_created"
-          ? "The next round is currently being created. Please try joining a little later."
+          ? t("round_creating")
           : result.round.status === "finished"
             ? t("session_finished")
-            : "Unable to join the round. Please try again later.";
+            : t("join_failed");
         showMessage(message, "error");
       } else {
         showMessage(t("help_route_start"), "success");
@@ -1412,7 +1419,7 @@
     } catch (error) {
       applyProjectionError(error);
       showMessage(error.code === "city_pairs_exhausted"
-        ? t(error_route) 
+        ? t("error_route")
         : error.message);
     } finally {
       state.busy = false;
@@ -1440,7 +1447,7 @@
       });
       if (result.round.id !== state.round.id) {
         state.retryRouteIds = null;
-        showMessage("The response relates to an incomplete round and was not applied. Please refresh the page.");
+        showMessage(t("incomplete_round"));
         await loadGame();
         return;
       }
@@ -1468,7 +1475,7 @@
       ) {
         state.retryRouteIds = null;
         await loadGame();
-        showMessage("The round status has changed. The page data has been updated.");
+        showMessage(t("round_status_changed"));
         return;
       }
       if (error.code === "crossword_generation_failed") {
@@ -1577,24 +1584,11 @@
     elements.mapCanvas.style.zoom = String(Number(selectedScale.value) * mobileScale); 
   }
 
-  function formatWordLetters(count, locale = 'ru') {
+  function formatWordLetters(count) {
     const pr = new Intl.PluralRules(locale);
     const rule = pr.select(count);
-
-    const translations = {
-      ru: {
-        one: `В слове ${count} буква`,
-        few: `В слове ${count} буквы`,
-        many: `В слове ${count} букв`,
-        other: `В слове ${count} буквы`, // для дробных чисел, например 1.5
-      },
-      en: {
-        one: `The word has ${count} letter`,
-        other: `The word has ${count} letters`,
-      }
-    };
-    
-    return translations[locale][rule];
+    const template = t(`word_length_${rule}`, t("word_length_other"));
+    return template.replace("{count}", numberFormat.format(count));
   }
 
   // Отрабатываем событие перетаскивания мышкой с нажатым контролом

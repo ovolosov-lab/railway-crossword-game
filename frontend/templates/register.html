@@ -1,29 +1,30 @@
 <!doctype html>
-<html lang="ru">
+<html lang="{{ lang }}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light">
-    <title>Регистрация — Железная дорога (чайнворд)</title>
+    <title>{{ register_page_title }}</title>
     <link rel="stylesheet" href="/static/auth.css">
+    <script id="i18n-data" type="application/json">{{ {"lang": lang, "js": translations} | tojson }}</script>
     <script src="/static/register.js" defer></script>
   </head>
   <body>
     <main class="auth-layout">
       <section class="auth-card" aria-labelledby="register-title">
-        <a class="brand" href="/" aria-label="Железная дорога — главная">
+        <a class="brand" href="/" aria-label="{{ brand_aria_label }}">
           <span class="brand-mark" aria-hidden="true">🛤️</span>
-          <span class="game-title">Железная дорога</span>
+          <span class="game-title">{{ game_title2 }}</span>
         </a>
 
         <div class="auth-heading">
-          <p class="eyebrow">Начните свой маршрут</p>
-          <h1 id="register-title">Создать аккаунт</h1>
-          <p class="intro">Зарегистрируйтесь, чтобы присоединиться к игре.</p>
+          <p class="eyebrow">{{ register_eyebrow }}</p>
+          <h1 id="register-title">{{ register_heading }}</h1>
+          <p class="intro">{{ register_intro }}</p>
         </div>
 
         <form id="register-form" class="auth-form" action="/auth/register/" method="post">
-          <label for="username">Имя пользователя</label>
+          <label for="username">{{ username_label }}</label>
           <input
             id="username"
             name="username"
@@ -34,7 +35,7 @@
             required
           >
 
-          <label for="email">Электронная почта</label>
+          <label for="email">{{ email_label }}</label>
           <input
             id="email"
             name="email"
@@ -46,7 +47,7 @@
             required
           >
 
-          <label for="password">Пароль</label>
+          <label for="password">{{ password_label }}</label>
           <input
             id="password"
             name="password"
@@ -57,7 +58,7 @@
             required
           >
 
-          <label for="password-confirmation">Повторите пароль</label>
+          <label for="password-confirmation">{{ password_confirmation_label }}</label>
           <input
             id="password-confirmation"
             name="password_confirmation"
@@ -71,25 +72,25 @@
           <p id="form-message" class="form-message" role="alert" aria-live="polite" hidden></p>
 
           <button id="submit-button" class="submit-button" type="submit">
-            <span class="button-label">Зарегистрироваться</span>
+            <span class="button-label">{{ register_submit }}</span>
             <span class="button-spinner" aria-hidden="true"></span>
           </button>
         </form>
 
         <p class="auth-footer">
-          Уже есть аккаунт?
-          <a href="/login/">Войти</a>
+          {{ login_prompt }}
+          <a href="/login/">{{ login_link }}</a>
         </p>
       </section>
 
-      <aside class="auth-aside" aria-label="О игре">
+      <aside class="auth-aside" aria-label="{{ auth_about }}">
         <div class="route-illustration" aria-hidden="true">
           <span class="city city-start"></span>
           <span class="rail-line"></span>
           <span class="city city-end"></span>
         </div>
-        <p class="aside-kicker">Постройте свой путь</p>
-        <p class="aside-copy">Отгадывайте слова, соединяйте города и стройте свою железную дорогу.</p>
+        <p class="aside-kicker">{{ register_aside_kicker }}</p>
+        <p class="aside-copy">{{ auth_aside_copy }}</p>
       </aside>
     </main>
   </body>

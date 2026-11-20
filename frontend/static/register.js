@@ -1,5 +1,10 @@
 "use strict";
 
+const localization = JSON.parse(
+  document.getElementById("i18n-data")?.textContent || "{}",
+);
+const messages = localization.js || {};
+const t = (key) => messages[key] || key;
 const form = document.querySelector("#register-form");
 
 if (form instanceof HTMLFormElement) {
@@ -35,21 +40,21 @@ if (form instanceof HTMLFormElement) {
     message.dataset.kind = "";
 
     if (!username || username.length > 32) {
-      message.textContent = "Имя пользователя должно содержать от 1 до 32 символов.";
+      message.textContent = t("username_invalid");
       message.hidden = false;
       usernameInput.focus();
       return;
     }
 
     if (new TextEncoder().encode(password).length > 72) {
-      message.textContent = "Пароль не должен превышать 72 байта в кодировке UTF-8.";
+      message.textContent = t("password_too_long");
       message.hidden = false;
       passwordInput.focus();
       return;
     }
 
     if (password !== confirmation) {
-      message.textContent = "Пароли не совпадают.";
+      message.textContent = t("password_mismatch");
       message.hidden = false;
       confirmationInput.focus();
       return;
@@ -57,7 +62,7 @@ if (form instanceof HTMLFormElement) {
 
     submitButton.disabled = true;
     submitButton.setAttribute("aria-busy", "true");
-    buttonLabel.textContent = "Создаём аккаунт…";
+    buttonLabel.textContent = t("register_submitting");
 
     try {
       const response = await fetch(form.action, {
@@ -73,11 +78,11 @@ if (form instanceof HTMLFormElement) {
 
       if (!response.ok) {
         if (response.status === 409) {
-          message.textContent = "Это имя пользователя или электронная почта уже заняты.";
+          message.textContent = t("register_conflict");
         } else if (response.status === 422) {
-          message.textContent = "Проверьте введённые данные и попробуйте ещё раз.";
+          message.textContent = t("validation_failed");
         } else {
-          message.textContent = "Не удалось создать аккаунт. Попробуйте ещё раз позже.";
+          message.textContent = t("register_failed");
         }
         message.hidden = false;
         return;
@@ -85,14 +90,14 @@ if (form instanceof HTMLFormElement) {
 
       window.location.assign("/login/?registered=1");
     } catch {
-      message.textContent = "Не удалось связаться с сервером. Проверьте подключение.";
+      message.textContent = t("connection_failed");
       message.hidden = false;
     } finally {
       passwordInput.value = "";
       confirmationInput.value = "";
       submitButton.disabled = false;
       submitButton.removeAttribute("aria-busy");
-      buttonLabel.textContent = "Зарегистрироваться";
+      buttonLabel.textContent = t("register_submit");
     }
   });
 }

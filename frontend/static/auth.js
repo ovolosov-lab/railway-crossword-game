@@ -1,5 +1,10 @@
 "use strict";
 
+const localization = JSON.parse(
+  document.getElementById("i18n-data")?.textContent || "{}",
+);
+const messages = localization.js || {};
+const t = (key) => messages[key] || key;
 const form = document.querySelector("#login-form");
 const message = document.querySelector("#form-message");
 
@@ -7,7 +12,7 @@ if (
   message instanceof HTMLElement &&
   new URLSearchParams(window.location.search).get("registered") === "1"
 ) {
-  message.textContent = "Аккаунт создан. Теперь войдите в игру.";
+  message.textContent = t("registered_message");
   message.dataset.kind = "success";
   message.hidden = false;
 }
@@ -36,7 +41,7 @@ if (form instanceof HTMLFormElement) {
     message.dataset.kind = "";
     submitButton.disabled = true;
     submitButton.setAttribute("aria-busy", "true");
-    buttonLabel.textContent = "Входим…";
+    buttonLabel.textContent = t("login_submitting");
 
     try {
       const response = await fetch(form.action, {
@@ -52,21 +57,21 @@ if (form instanceof HTMLFormElement) {
       if (!response.ok) {
         message.textContent =
           response.status === 401
-            ? "Не удалось войти. Проверьте электронную почту и пароль."
-            : "Сервис временно недоступен. Попробуйте ещё раз позже.";
+            ? t("login_failed")
+            : t("temporary_unavailable");
         message.hidden = false;
         return;
       }
 
       window.location.assign("/game/");
     } catch {
-      message.textContent = "Не удалось связаться с сервером. Проверьте подключение.";
+      message.textContent = t("connection_failed");
       message.hidden = false;
     } finally {
       passwordInput.value = "";
       submitButton.disabled = false;
       submitButton.removeAttribute("aria-busy");
-      buttonLabel.textContent = "Войти";
+      buttonLabel.textContent = t("login_submit");
     }
   });
 }

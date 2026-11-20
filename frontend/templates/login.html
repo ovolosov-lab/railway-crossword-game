@@ -1,30 +1,31 @@
 <!doctype html>
-<html lang="ru">
+<html lang="{{ lang }}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light">
-    <title>Вход — Железная дорога (чайнворд)</title>
+    <title>{{ login_page_title }}</title>
     <link rel="stylesheet" href="/static/auth.css">
+    <script id="i18n-data" type="application/json">{{ {"lang": lang, "js": translations} | tojson }}</script>
     <script src="/static/auth.js" defer></script>
   </head>
   <body>
     <main class="auth-layout">
       <section class="auth-card" aria-labelledby="login-title">
-        <a class="brand" href="/" aria-label="Железная дорога — главная">
+        <a class="brand" href="/" aria-label="{{ brand_aria_label }}">
           <!--<span class="brand-mark" aria-hidden="true">🛤️</span>-->
-          <img src="/static/img/loco.jpg" height="50" width="120" alt="Железная дорога">
-          <span class="game-title">Железная дорога</span>
+          <img src="/static/img/loco.jpg" height="50" width="120" alt="{{ brand_alt }}">
+          <span class="game-title">{{ game_title2 }}</span>
         </a>
 
         <div class="auth-heading">
-          <p class="eyebrow">Рады видеть вас снова</p>
-          <h1 id="login-title">Войти в игру</h1>
-          <p class="intro">Войдите, чтобы продолжить свой маршрут.</p>
+          <p class="eyebrow">{{ login_eyebrow }}</p>
+          <h1 id="login-title">{{ login_heading }}</h1>
+          <p class="intro">{{ login_intro }}</p>
         </div>
 
         <form id="login-form" class="auth-form" action="/auth/" method="post">
-          <label for="email">Электронная почта</label>
+          <label for="email">{{ email_label }}</label>
           <input
             id="email"
             name="email"
@@ -37,7 +38,7 @@
           >
 
           <div class="password-label">
-            <label for="password">Пароль</label>
+            <label for="password">{{ password_label }}</label>
           </div>
           <input
             id="password"
@@ -51,25 +52,25 @@
           <p id="form-message" class="form-message" role="alert" aria-live="polite" hidden></p>
 
           <button id="submit-button" class="submit-button" type="submit">
-            <span class="button-label">Войти</span>
+            <span class="button-label">{{ login_submit }}</span>
             <span class="button-spinner" aria-hidden="true"></span>
           </button>
         </form>
 
         <p class="auth-footer">
-          Ещё нет аккаунта?
-          <a href="/register/">Зарегистрироваться</a>
+          {{ register_prompt }}
+          <a href="/register/">{{ register_link }}</a>
         </p>
       </section>
 
-      <aside class="auth-aside" aria-label="О игре">
+      <aside class="auth-aside" aria-label="{{ auth_about }}">
         <div class="route-illustration" aria-hidden="true">
           <span class="city city-start"></span>
           <span class="rail-line"></span>
           <span class="city city-end"></span>
         </div>
-        <p class="aside-kicker">Чайнворд на карте</p>
-        <p class="aside-copy">Отгадывайте слова, соединяйте города и стройте свою железную дорогу.</p>
+        <p class="aside-kicker">{{ login_aside_kicker }}</p>
+        <p class="aside-copy">{{ auth_aside_copy }}</p>
       </aside>
     </main>
   </body>
