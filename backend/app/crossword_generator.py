@@ -20,6 +20,7 @@ from uuid import UUID
 from app.game_segments import WordProposal, normalize_answer
 
 CELL_WIDTH_PX = 26
+CITY_CLEARANCE_PX = 26
 MIN_GAP_PX = 5
 SHORT_WORD_MAX_LETTERS = 2
 SMALL_SEGMENT_MAX_CELLS = 31
@@ -102,6 +103,11 @@ class SegmentSpec:
     @property
     def available_px(self) -> int:
         return int(min(self.length_px, self.length_in_letters * CELL_WIDTH_PX))
+
+    @property
+    def word_area_px(self) -> int:
+        """Space available to words after reserving both city clearances."""
+        return max(0, self.available_px - CITY_CLEARANCE_PX * 2)
 
     @property
     def free_space_target_px(self) -> int:
@@ -187,11 +193,17 @@ def _score(words: Sequence[WordCandidate], spec: SegmentSpec) -> tuple[bool, int
 def _place(
     words: Sequence[WordCandidate], spec: SegmentSpec, rng: random.Random
 ) -> list[WordProposal]:
-    """Spread the free space evenly: edges and gaps get the same extra pixels."""
-    slot = (spec.available_px - _width(words)) // (len(words) + 1)
-    offset = slot
+    """Keep 26 px clear at both ends and spread the remaining space evenly."""
+    free_space = (
+        spec.available_px
+        - CITY_CLEARANCE_PX * 2
+        - _width(words)
+    )
+    slot, remainder = divmod(free_space, len(words) + 1)
+    spaces = [slot + (index < remainder) for index in range(len(words) + 1)]
+    offset = CITY_CLEARANCE_PX + spaces[0]
     proposals: list[WordProposal] = []
-    for word in words:
+    for index, word in enumerate(words):
         proposals.append(WordProposal(
             placement_id=UUID(int=rng.getrandbits(128), version=4),
             dictionary_word_id=word.id,
@@ -199,7 +211,9 @@ def _place(
             definition=word.definition,
             offset_px=float(offset),
         ))
-        offset += word.cells * CELL_WIDTH_PX + MIN_GAP_PX + slot
+        offset += word.cells * CELL_WIDTH_PX
+        if index < len(words) - 1:
+            offset += MIN_GAP_PX + spaces[index + 1]
     return proposals
 
 
@@ -234,7 +248,7 @@ def generate_segment_proposals(
     result: dict[int, list[WordProposal]] = {}
     for spec in segments:
         layouts = (
-            _fill(spec.available_px, pool, blocked, rng, choose_action)
+            _fill(spec.word_area_px, pool, blocked, rng, choose_action)
             for _ in range(attempts)
         )
         best = min(layouts, key=lambda words: _score(words, spec))

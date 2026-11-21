@@ -15,9 +15,9 @@ REQUIRED_SECTIONS = ("html", "js", "api")
 REQUIRED_KEYS = {
     "html": frozenset(
         {
-            "html_title", "subtitle", "game_title", "intro", "summary_label",
+            "html_title", "subtitle", "game_title", "intro", "summary_label", "session_summary_label",
             "session_status", "game_loading", "loading", "statistics", "auto_route",
-            "join_button", "confirm_route_button", "play_with_train", "leaderboard_title",
+            "join_button", "surrender_button", "confirm_route_button", "play_with_train", "leaderboard_title",
             "participant_count", "leaderboard_empty", "map_panel", "aria_label_main",
             "game_title2", "game_user", "map_help", "map_scroll", "aria_label_cities",
             "map_scroll_hint", "map_legend", "legend_traget", "map_scale", "victory_greet",
@@ -35,6 +35,7 @@ REQUIRED_KEYS = {
     "js": frozenset(
         {
             "error_fetch", "error_response", "error_request", "status_unknown",
+            "error_route_shape", "submit_guess",
             "status_waiting", "status_active", "status_finished", "scores",
             "leaderboard_empty", "crossword_cells", "crossword_area_label", "city_aria_label",
             "route_aria_label", "line_aria_label", "word_dialog_guessed", "word_dialog_title",
@@ -44,7 +45,10 @@ REQUIRED_KEYS = {
             "error_temporary_unavailable", "map_help_playing", "map_help_stat",
             "map_help_finished", "route_success", "route_select", "route_selected",
             "route_paths", "route_help", "watching_stats", "selecting_route", "playing",
-            "help_watching_stats", "help_selecting_route", "help_playing", "start_city",
+            "statistics_title", "start_game", "status_won", "finishing", "session_none", "session_active",
+            "session_finishing", "session_finished_status", "session_score", "new_game",
+            "surrendered", "hint_received", "route_already_solved", "no_available_route",
+            "help_watching_stats", "help_selecting_route", "help_playing", "help_finishing", "start_city",
             "end_city", "reload_require", "session_finished", "help_route_start",
             "error_route", "route_confirmed", "error_words", "mess_game_finished",
             "error_confirm", "error_marshroot", "show_again", "deducted", "for_free",

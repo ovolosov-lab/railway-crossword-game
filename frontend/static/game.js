@@ -1128,6 +1128,10 @@
       } else if (response.guess?.result === "incorrect") {
         setFeedback(elements.wordFeedback, t("incorrect"), "error");
       }
+      if (["correct", "already_solved"].includes(response.guess?.result)) {
+        state.activePlacementId = null;
+        if (elements.wordDialog.open) elements.wordDialog.close();
+      }
       if (response.round.status === "finished") {
         renderPlayer();
         showTerminalOutcome(response.round, response.player);

@@ -315,6 +315,7 @@ async def game_page(
             username=user.username,
             csrf_cookie_name=settings.csrf_cookie_name,
             frontend_sync_interval=settings.frontend_sync_interval,
+            continuous_game_enabled=settings.continuous_game_enabled,
         ),
     )
 

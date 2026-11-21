@@ -2,6 +2,10 @@
    display: none !important;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 #emojiBlock {
     position:absolute;
     font-size:57px;
@@ -126,10 +130,6 @@
   font-size: 11px;
   font-weight: 750;
   white-space: nowrap;
-}
-
-#confirm-route-button {
-  display: none;
 }
 
 .round-status[data-state="finished"],
@@ -284,6 +284,14 @@
 .game-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.surrender-button {
+  background: #a23d3d;
+}
+
+.surrender-button:hover:not(:disabled) {
+  background: #842f2f;
 }
 
 .leaderboard {

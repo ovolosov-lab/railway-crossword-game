@@ -11,6 +11,7 @@ from redis.asyncio import Redis
 
 from app.crossword_generator import (
     CELL_WIDTH_PX,
+    CITY_CLEARANCE_PX,
     MIN_GAP_PX,
     CrosswordGenerationError,
     SegmentSpec,
@@ -51,19 +52,20 @@ class LayoutAssertions(unittest.TestCase):
         end = 0
         extras = []
         for index, proposal in enumerate(proposals):
-            self.assertGreaterEqual(proposal.offset_px, 0)
+            self.assertGreaterEqual(proposal.offset_px, CITY_CLEARANCE_PX)
             self.assertEqual(proposal.offset_px, int(proposal.offset_px))
             gap = proposal.offset_px - end
             if index:
                 self.assertGreaterEqual(gap, MIN_GAP_PX)
                 extras.append(gap - MIN_GAP_PX)
             else:
-                extras.append(gap)
+                extras.append(gap - CITY_CLEARANCE_PX)
             end = proposal.offset_px + len(proposal.word_text) * CELL_WIDTH_PX
         if proposals:
-            self.assertLessEqual(end, spec.available_px)
-            self.assertEqual(len(set(extras)), 1, "free space must be spread evenly")
-            self.assertGreaterEqual(spec.available_px - end, extras[0])
+            trailing_space = spec.available_px - end
+            self.assertGreaterEqual(trailing_space, CITY_CLEARANCE_PX)
+            extras.append(trailing_space - CITY_CLEARANCE_PX)
+            self.assertLessEqual(max(extras) - min(extras), 1, "free space must be spread evenly")
 
 
 class SegmentGeometryTests(unittest.TestCase):
@@ -108,8 +110,8 @@ class GeneratorTests(LayoutAssertions):
         )[1]
         self.assertEqual(sorted(texts(proposals)), ["rail", "train"])
         self.assert_valid_layout(spec, proposals)
-        # 364 - (9 cells * 26 + 5) = 125 free pixels, three equal slots of 41.
-        self.assertEqual(proposals[0].offset_px, 41)
+        # Edge clearance and the word gap are reserved before spreading 73 px across three slots.
+        self.assertEqual(proposals[0].offset_px, 51)
 
     def test_words_never_leave_the_geometric_limit(self) -> None:
         pool = [word(i, "w" * length) for i, length in enumerate(range(3, 12), 1)]

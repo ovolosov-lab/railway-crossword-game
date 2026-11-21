@@ -298,13 +298,16 @@ class ContinuousGameApiTests(unittest.IsolatedAsyncioTestCase):
             })
             self.assertFalse(placement["is_guessed"])
             self.assertEqual(placement["hints"], [])
-            self.assertGreaterEqual(placement["offset_px"], 0)
+            self.assertGreaterEqual(placement["offset_px"], 26)
         by_route = {}
         for placement in crossword:
             by_route.setdefault(placement["route_id"], []).append(placement)
         for route_id, limit in ((3, 234), (4, 520)):
             for placement in by_route[route_id]:
-                self.assertLessEqual(placement["offset_px"] + placement["letter_count"] * 26, limit)
+                self.assertLessEqual(
+                    placement["offset_px"] + placement["letter_count"] * 26,
+                    limit - 26,
+                )
         words = [word_of(item) for item in crossword]
         self.assertEqual(len(words), len(set(words)))
         again = await self.confirm(user, session_id, [3, 4])

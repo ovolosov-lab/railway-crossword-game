@@ -72,6 +72,7 @@ class TranslationResourceTests(unittest.TestCase):
                 username="locale-player",
                 csrf_cookie_name="csrf_token",
                 frontend_sync_interval=2,
+                continuous_game_enabled=True,
             )
             for template_name in ("login.html", "register.html", "game.html"):
                 with self.subTest(language=language, template=template_name):
@@ -79,12 +80,33 @@ class TranslationResourceTests(unittest.TestCase):
                     self.assertIn(f'<html lang="{language}">', rendered)
                     self.assertNotIn("{{", rendered)
                     self.assertIn(translations.ui["game_title2"], rendered)
+                    if template_name == "game.html":
+                        self.assertIn('/static/game_sessions.js', rendered)
+                        self.assertIn('id="surrender-button"', rendered)
+                        self.assertIn(translations.ui["session_summary_label"], rendered)
+                        confirm_button = rendered.split('id="confirm-route-button"', 1)[1].split(">", 1)[0]
+                        self.assertIn("hidden", confirm_button)
 
                     parser = LocalizationPayloadParser()
                     parser.feed(rendered)
                     payload = json.loads("".join(parser.parts))
                     self.assertEqual(payload["lang"], language)
                     self.assertEqual(payload["js"]["word_length_one"], translations.js["word_length_one"])
+
+    def test_game_template_keeps_the_mvp_client_available_when_sessions_are_disabled(self) -> None:
+        context = load_translations("en").template_context()
+        context.update(
+            username="locale-player",
+            csrf_cookie_name="csrf_token",
+            frontend_sync_interval=2,
+            continuous_game_enabled=False,
+        )
+        rendered = templates.get_template("game.html").render(context)
+        self.assertIn('/static/game.js', rendered)
+        self.assertNotIn('/static/game_sessions.js', rendered)
+        confirm_button = rendered.split('id="confirm-route-button"', 1)[1].split(">", 1)[0]
+        self.assertIn('style="display:none"', confirm_button)
+        self.assertNotIn(" hidden", confirm_button)
 
     def test_missing_file_language_and_required_translation_fail_explicitly(self) -> None:
         with self.assertRaisesRegex(TranslationsError, "Unsupported language"):
@@ -132,9 +154,11 @@ class TranslationResourceTests(unittest.TestCase):
                 self.assertEqual(body["error"]["message"], expected)
 
     def test_game_script_does_not_contain_server_template_placeholders(self) -> None:
-        script = (ROOT / "frontend" / "static" / "game.js").read_text(encoding="utf-8")
-        self.assertNotRegex(script, re.compile(r"\{\{\s*locale\s*\}\}"))
-        self.assertIn("new Intl.PluralRules(locale)", script)
+        for name in ("game.js", "game_sessions.js"):
+            with self.subTest(script=name):
+                script = (ROOT / "frontend" / "static" / name).read_text(encoding="utf-8")
+                self.assertNotRegex(script, re.compile(r"\{\{\s*locale\s*\}\}"))
+                self.assertIn("new Intl.PluralRules(locale)", script)
 
 
 if __name__ == "__main__":
