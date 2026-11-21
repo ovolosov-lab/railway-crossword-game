@@ -32,7 +32,6 @@
 }
 
 .game-layout,
-.round-summary,
 .section-heading,
 .assigned-cities {
   display: flex;
@@ -40,6 +39,7 @@
 
 .game-title {
 	color: green;
+  margin-bottom: 15px;
 }
 
 .game-user {
@@ -92,52 +92,6 @@
   display: none;
 }
 
-.round-summary {
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin: 22px 0 14px;
-  padding: 14px;
-  border: 1px solid #e5ede6;
-  border-radius: 13px;
-  background: #f7faf6;
-}
-
-.round-summary > div {
-  display: grid;
-  gap: 4px;
-}
-
-.summary-label {
-  color: #718078;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-#round-timer {
-  color: #00b4ef;
-  font-size: 22px;
-  font-variant-numeric: tabular-nums;
-}
-
-.round-status {
-  padding: 6px 9px;
-  border-radius: 999px;
-  color: #39705c;
-  background: #e7f3e9;
-  font-size: 11px;
-  font-weight: 750;
-  white-space: nowrap;
-}
-
-.round-status[data-state="finished"],
-.round-status[data-state="being_created"] {
-  color: #866125;
-  background: #fbf0d9;
-}
-
 .game-message {
   margin: 0 0 14px;
   padding: 11px 13px;
@@ -184,6 +138,12 @@
   color: #5e7067;
   font-size: 16px;
   letter-spacing: -0.02em;
+}
+
+.player-card #player-state {
+  color: #00b4ef;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
 }
 
 .player-card p {
@@ -317,6 +277,10 @@
     border-radius: 10px;
     padding: 0 10px 0 0;
     overflow: hidden;
+}
+
+.leaderboard-div[hidden] {
+  display: none;
 }
 
 .leaderboard-list {
@@ -769,6 +733,11 @@
   margin: 0 0 16px;
   color: #607167;
   font-size: 14px;
+}
+
+.word-length-count {
+  color: #111827;
+  font-weight: 800;
 }
 
 .guess-label {

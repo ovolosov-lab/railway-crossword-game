@@ -1,7 +1,5 @@
 from collections.abc import AsyncGenerator
-import asyncio
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 from typing import Annotated, Any
@@ -22,7 +20,7 @@ from starlette.requests import Request
 
 from app.admin_api import router as admin_router
 from app.api_errors import api_exception_handler, request_validation_exception_handler
-from app.config import Settings, get_settings
+from app.config import get_settings
 from app.database import engine, get_db, AsyncSessionLocal
 from app.game_generation import (
     GameGeneration,
@@ -35,8 +33,6 @@ from app.continuous_game_api import (
     router as continuous_game_router,
     write_router as continuous_game_write_router,
 )
-from app.game_api import router as game_router, write_router as game_write_router
-from app.game_state import ActiveGame, GameFinishedError, PrevGame
 from app.game_sessions import GameSessions
 from app.game_segments import GameSegments
 from app.game_victories import GameVictories
@@ -46,6 +42,7 @@ from app.periodic_task import AsyncPeriodicTask
 from app.security import get_authenticated_user
 
 settings = get_settings()
+PENDING_VICTORY_RETRY_INTERVAL_SECONDS = 40
 
 
 def page_context(**extra: Any) -> dict[str, Any]:
@@ -55,7 +52,7 @@ def page_context(**extra: Any) -> dict[str, Any]:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
-    """Initialize database and game lifecycle services for the application."""
+    """Initialize the individual-session game services for the application."""
     logger.info("Starting {}", settings.app_name)
     periodic_tasks: list[AsyncPeriodicTask] = []
     redis_client = None
@@ -63,62 +60,33 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         # Fail fast on a missing or malformed locale file, before any other startup work.
         load_translations(settings.language)
         await check_database_connection()
-        application.state.game_lock = asyncio.Lock()
         application.state.game_settings = settings
-        application.state.game_generation = None
-        application.state.game_sessions = None
-        application.state.game_segments = None
-        application.state.game_victories = None
-        if settings.redis_url is not None:
-            redis_client = create_redis_client(settings.redis_url)
-            try:
-                application.state.game_generation = await GameGeneration.load_current(
-                    redis_client
-                )
-                application.state.game_sessions = GameSessions(application.state.game_generation)
-                application.state.game_segments = GameSegments(application.state.game_sessions)
-                application.state.game_victories = await GameVictories.create(
-                    application.state.game_sessions,
-                    AsyncSessionLocal,
-                )
-            except (RedisError, GameGenerationUnavailable):
-                logger.exception(
-                    "Application startup failed: Redis generation is unavailable"
-                )
-                raise
-            logger.info(
-                "Using game generation {}",
-                application.state.game_generation.generation_id,
+        redis_client = create_redis_client(settings.redis_url)
+        try:
+            application.state.game_generation = await GameGeneration.load_current(
+                redis_client
             )
-        else:
-            logger.warning(
-                "REDIS_URL is unset; running the legacy MVP without generation fencing"
+            application.state.game_sessions = GameSessions(application.state.game_generation)
+            application.state.game_segments = GameSegments(application.state.game_sessions)
+            application.state.game_victories = await GameVictories.create(
+                application.state.game_sessions,
+                AsyncSessionLocal,
             )
-        application.state.activeGame = ActiveGame.create(settings=settings)
-        application.state.prevGame = PrevGame()
-        logger.info("Created initial game round {}", application.state.activeGame.game_id)
-
+        except (RedisError, GameGenerationUnavailable):
+            logger.exception(
+                "Application startup failed: Redis generation is unavailable"
+            )
+            raise
+        logger.info(
+            "Using game generation {}",
+            application.state.game_generation.generation_id,
+        )
         periodic_tasks.append(
             AsyncPeriodicTask(
-                interval=settings.check_interval,
-                task_func=partial(
-                    check_game_duration,
-                    application,
-                    app_settings=settings,
-                ),
+                interval=PENDING_VICTORY_RETRY_INTERVAL_SECONDS,
+                task_func=partial(retry_pending_victories, application),
             )
         )
-
-        if application.state.game_victories is not None:
-            periodic_tasks.append(
-                AsyncPeriodicTask(
-                    interval=settings.check_interval,
-                    task_func=partial(
-                        retry_pending_victories,
-                        application,
-                    ),
-                )
-            )
 
         for task in periodic_tasks:
             task.start()
@@ -149,49 +117,9 @@ async def check_database_connection() -> None:
         raise
 
 
-async def check_game_duration(
-    application: FastAPI,
-    *,
-    app_settings: Settings | None = None,
-    now: datetime | None = None,
-) -> None:
-    """Finish expired rounds and retain their result before creating the next one."""
-    current_time = now or datetime.now(timezone.utc)
-    game_settings = app_settings or get_settings()
-    async with application.state.game_lock:
-        game: ActiveGame = application.state.activeGame
-        if game.status == "active":
-            if current_time < game.expires_at:
-                return
-            try:
-                result = await game.finish_timeout(now=current_time)
-                logger.info("Game round {} timed out", result.game_id)
-            except GameFinishedError:
-                if game.status != "finished":
-                    raise
-
-        if game.status == "finished":
-            previous: PrevGame = getattr(application.state, "prevGame", PrevGame())
-            if previous.round_id != game.game_id:
-                application.state.prevGame = PrevGame.from_finished_game(game)
-            next_game = ActiveGame.create(
-                settings=game_settings,
-                started_at=game.finished_at or current_time,
-            )
-            application.state.activeGame = next_game
-            logger.info("Created next game round {}", next_game.game_id)
-
-
 async def retry_pending_victories(application: FastAPI) -> None:
     """Process pending victories from the queue using the generation guard."""
-    game_victories: GameVictories | None = getattr(
-        application.state,
-        "game_victories",
-        None,
-    )
-    if game_victories is None:
-        return
-
+    game_victories: GameVictories = application.state.game_victories
     try:
         await game_victories.retry_pending()
     except StaleGameGeneration:
@@ -254,12 +182,8 @@ async def fence_stale_game_worker(request: Request, call_next):
 
 app.include_router(auth_router)
 app.include_router(admin_router)
-if settings.continuous_game_enabled:
-    app.include_router(continuous_game_router)
-    app.include_router(continuous_game_write_router)
-else:
-    app.include_router(game_router)
-    app.include_router(game_write_router)
+app.include_router(continuous_game_router)
+app.include_router(continuous_game_write_router)
 project_root = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(
     directory=[
@@ -315,7 +239,6 @@ async def game_page(
             username=user.username,
             csrf_cookie_name=settings.csrf_cookie_name,
             frontend_sync_interval=settings.frontend_sync_interval,
-            continuous_game_enabled=settings.continuous_game_enabled,
         ),
     )
 

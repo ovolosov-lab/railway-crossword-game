@@ -1,4 +1,5 @@
 import unittest
+from contextlib import contextmanager
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -11,16 +12,25 @@ from app.security import get_authenticated_user
 from main import app
 
 
+@contextmanager
+def client_without_lifespan(**kwargs):
+    client = TestClient(app, **kwargs)
+    try:
+        yield client
+    finally:
+        client.close()
+
+
 class LoginPageTests(unittest.TestCase):
     def test_root_redirects_unauthenticated_user_to_login(self) -> None:
-        with TestClient(app, follow_redirects=False) as client:
+        with client_without_lifespan(follow_redirects=False) as client:
             response = client.get("/")
 
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/login/")
 
     def test_root_redirects_invalid_token_to_login(self) -> None:
-        with TestClient(app, follow_redirects=False) as client:
+        with client_without_lifespan(follow_redirects=False) as client:
             client.cookies.set("access_token", "invalid")
             response = client.get("/")
 
@@ -43,7 +53,7 @@ class LoginPageTests(unittest.TestCase):
 
         app.dependency_overrides[get_db] = override_get_db
         try:
-            with TestClient(app, follow_redirects=False) as client:
+            with client_without_lifespan(follow_redirects=False) as client:
                 client.cookies.set("access_token", create_access_token(user.id))
                 response = client.get("/")
         finally:
@@ -54,7 +64,7 @@ class LoginPageTests(unittest.TestCase):
         session.scalar.assert_awaited_once()
 
     def test_login_page_is_public_and_links_registration(self) -> None:
-        with TestClient(app) as client:
+        with client_without_lifespan() as client:
             response = client.get("/login/")
 
         self.assertEqual(response.status_code, 200)
@@ -65,7 +75,7 @@ class LoginPageTests(unittest.TestCase):
         self.assertIn('class="brand-mark" aria-hidden="true">🛤️</span>', response.text)
 
     def test_registration_page_is_public_and_has_required_fields(self) -> None:
-        with TestClient(app) as client:
+        with client_without_lifespan() as client:
             response = client.get("/register/")
 
         self.assertEqual(response.status_code, 200)
@@ -78,7 +88,7 @@ class LoginPageTests(unittest.TestCase):
         self.assertIn('class="brand-mark" aria-hidden="true">🛤️</span>', response.text)
 
     def test_login_assets_are_served(self) -> None:
-        with TestClient(app) as client:
+        with client_without_lifespan() as client:
             script = client.get("/static/auth.js")
             stylesheet = client.get("/static/auth.css")
 
@@ -89,7 +99,7 @@ class LoginPageTests(unittest.TestCase):
         self.assertEqual(stylesheet.status_code, 200)
 
     def test_registration_script_is_served_with_client_validation(self) -> None:
-        with TestClient(app) as client:
+        with client_without_lifespan() as client:
             script = client.get("/static/register.js")
 
         self.assertEqual(script.status_code, 200)
@@ -100,14 +110,14 @@ class LoginPageTests(unittest.TestCase):
         self.assertNotIn("sessionStorage", script.text)
 
     def test_game_page_redirects_without_authentication_cookie(self) -> None:
-        with TestClient(app, follow_redirects=False) as client:
+        with client_without_lifespan(follow_redirects=False) as client:
             response = client.get("/game/")
 
         self.assertEqual(response.status_code, 303)
         self.assertEqual(response.headers["location"], "/login/")
 
     def test_game_page_redirects_with_invalid_authentication_cookie(self) -> None:
-        with TestClient(app, follow_redirects=False) as client:
+        with client_without_lifespan(follow_redirects=False) as client:
             response = client.get("/game/", cookies={"access_token": "invalid"})
 
         self.assertEqual(response.status_code, 303)
@@ -130,7 +140,7 @@ class LoginPageTests(unittest.TestCase):
         client = TestClient(app)
         try:
             response = client.get("/game/")
-            script = client.get("/static/game.js")
+            script = client.get("/static/game_sessions.js")
             stylesheet = client.get("/static/game.css")
             auth_stylesheet = client.get("/static/auth.css")
             confetti = client.get("/static/confetti.js")
@@ -144,7 +154,7 @@ class LoginPageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("map-player", response.text)
         self.assertIn('href="/static/game.css"', response.text)
-        self.assertIn('src="/static/game.js"', response.text)
+        self.assertIn('type="module" src="/static/game_sessions.js"', response.text)
         self.assertIn('id="Layer_1" class="map-image"', response.text)
         self.assertNotIn('src="/static/img/map.svg"', response.text)
         self.assertIn('class="map-scale-control"', response.text)
@@ -152,7 +162,8 @@ class LoginPageTests(unittest.TestCase):
             self.assertIn(f'name="map-scale" value="{scale}"', response.text)
         self.assertIn('class="brand map-brand"', response.text)
         self.assertIn('class="brand-mark" aria-hidden="true">🛤️</span>', response.text)
-        self.assertIn('class="game-user">Игрок: <strong>map-player</strong>', response.text)
+        self.assertIn('class="game-user"', response.text)
+        self.assertIn('<strong>map-player</strong>', response.text)
         self.assertNotIn('id="map-caption"', response.text)
         self.assertNotIn('class="game-header"', response.text)
         self.assertIn('width="4000"', response.text)
@@ -176,32 +187,12 @@ class LoginPageTests(unittest.TestCase):
         self.assertIn("app.dataset.syncInterval", script.text)
         self.assertIn("Number(source.left)", script.text)
         self.assertIn("Number(target.left)", script.text)
-        self.assertIn("const cityClearance = 18 + 5 + 7 + 8", script.text)
-        self.assertIn("const gap = Math.max(", script.text)
-        self.assertIn("y: -1.5", script.text)
-        self.assertIn("activePlacement()?.is_guessed", script.text)
-        self.assertIn("if (!placement || placement.is_guessed) return;", script.text)
-        self.assertIn("function startVictoryCelebration()", script.text)
-        self.assertIn("function animateVictoryTrain(showTrophy)", script.text)
-        self.assertIn("function showVictoryTrophy()", script.text)
-        self.assertIn("function positionVictoryImages()", script.text)
-        self.assertIn("elements.gamePanel.getBoundingClientRect()", script.text)
-        self.assertIn("elements.mapScroll.getBoundingClientRect()", script.text)
-        self.assertIn("segments.length * 1050", script.text)
-        self.assertIn("state.shouldCelebrateVictory", script.text)
+        self.assertIn("wordCenterOffset(placement.offset_px, placement.letter_count)", script.text)
         self.assertEqual(stylesheet.status_code, 200)
-        self.assertIn("width: 4000px", stylesheet.text)
-        self.assertIn("height: 3000px", stylesheet.text)
-        self.assertIn("width: calc(100% - 32px)", stylesheet.text)
-        self.assertIn("width: min(315px, 26.35%)", stylesheet.text)
-        self.assertIn("grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr)", stylesheet.text)
-        self.assertIn("margin: 10px 4px 1px", stylesheet.text)
-        self.assertIn("animation: victory-trophy-bob", stylesheet.text)
-        self.assertIn("width: clamp(120px, 14vw, 210px)", stylesheet.text)
-        self.assertIn("height: 88vh", stylesheet.text)
-        self.assertIn(".victory-locomotive", stylesheet.text)
-        self.assertIn("display: none", stylesheet.text)
-        self.assertIn("}, 8000)", script.text)
+        self.assertIn(".session-summary", stylesheet.text)
+        self.assertIn(".map-scroll", stylesheet.text)
+        self.assertIn(".word-dialog", stylesheet.text)
+        self.assertIn(".victory-overlay", stylesheet.text)
         self.assertEqual(auth_stylesheet.status_code, 200)
         self.assertIn("font-size: 28px", auth_stylesheet.text)
         self.assertEqual(confetti.status_code, 200)

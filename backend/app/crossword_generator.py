@@ -183,7 +183,9 @@ def _longer_replacement(
 
 
 def _score(words: Sequence[WordCandidate], spec: SegmentSpec) -> tuple[bool, int, int]:
-    free = spec.available_px - _width(words)
+    # City clearances are outside the placement area and must not count toward
+    # the ADR's free-space target for the usable segment.
+    free = spec.word_area_px - _width(words)
     short_words = sum(
         1 for word in words if word.letters <= SHORT_WORD_MAX_LETTERS
     )

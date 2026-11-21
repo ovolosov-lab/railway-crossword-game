@@ -123,7 +123,7 @@ class GeneratorTests(LayoutAssertions):
             self.assert_valid_layout(spec, proposals)
 
     def test_keep_action_uses_two_letter_words(self) -> None:
-        spec = SegmentSpec(1, 8, 208)
+        spec = SegmentSpec(1, 9, 234)
         pool = [word(1, "to"), word(2, "go"), word(3, "up")]
         proposals = generate_segment_proposals(
             [spec], pool, rng=random.Random(2), choose_action=keep
@@ -131,7 +131,7 @@ class GeneratorTests(LayoutAssertions):
         self.assertEqual(sorted(texts(proposals)), ["go", "to", "up"])
 
     def test_keep_action_also_uses_one_letter_words(self) -> None:
-        spec = SegmentSpec(1, 4, 104)
+        spec = SegmentSpec(1, 5, 130)
         pool = [word(1, "I"), word(2, "a")]
         proposals = generate_segment_proposals(
             [spec], pool, rng=random.Random(2), choose_action=keep
@@ -157,7 +157,7 @@ class GeneratorTests(LayoutAssertions):
             self.assertEqual(texts(proposals), ["station"])
 
     def test_keep_action_fills_the_same_space_with_the_two_letter_word(self) -> None:
-        spec = SegmentSpec(1, 10, 260)
+        spec = SegmentSpec(1, 12, 312)
         pool = [word(1, "station"), word(2, "to")]
         proposals = generate_segment_proposals(
             [spec], pool, rng=random.Random(4), choose_action=keep
@@ -165,7 +165,7 @@ class GeneratorTests(LayoutAssertions):
         self.assertEqual(sorted(texts(proposals)), ["station", "to"])
 
     def test_longer_action_replaces_previous_and_two_letter_words(self) -> None:
-        spec = SegmentSpec(1, 7, 182)
+        spec = SegmentSpec(1, 9, 234)
         pool = [word(1, "cat"), word(2, "to"), word(3, "railway")]
         for seed in range(20):
             proposals = generate_segment_proposals(
@@ -175,7 +175,7 @@ class GeneratorTests(LayoutAssertions):
             self.assertTrue(set(texts(proposals)) <= {"cat", "railway"})
 
     def test_longer_action_replaces_previous_and_one_letter_words(self) -> None:
-        spec = SegmentSpec(1, 7, 182)
+        spec = SegmentSpec(1, 9, 234)
         pool = [word(1, "cat"), word(2, "I"), word(3, "railway")]
         for seed in range(20):
             proposals = generate_segment_proposals(
@@ -194,7 +194,7 @@ class GeneratorTests(LayoutAssertions):
         self.assert_valid_layout(spec, proposals)
 
     def test_failed_replacement_falls_back_to_a_one_letter_word(self) -> None:
-        spec = SegmentSpec(1, 4, 104)
+        spec = SegmentSpec(1, 5, 130)
         pool = [word(1, "I"), word(2, "a")]
         proposals = generate_segment_proposals(
             [spec], pool, rng=random.Random(5), choose_action=longer
@@ -368,7 +368,7 @@ class RealCatalogComparisonTests(LayoutAssertions):
             self.assertFalse(route_is_empty(proposals))
             for spec, words in zip(self.segments, layouts):
                 self.assertTrue(words, f"segment {spec.route_id} is empty")
-                free = spec.available_px - sum(w.cells for w in words) * CELL_WIDTH_PX
+                free = spec.word_area_px - sum(w.cells for w in words) * CELL_WIDTH_PX
                 free -= MIN_GAP_PX * (len(words) - 1)
                 reached += free <= spec.free_space_target_px
                 total += 1

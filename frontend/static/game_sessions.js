@@ -22,12 +22,10 @@ import {
   const pluralRules = new Intl.PluralRules(locale);
 
   const el = {
-    timer: document.getElementById("round-timer"),
-    status: document.getElementById("round-status"),
+    playerState: document.getElementById("player-state"),
     message: document.getElementById("game-message"),
     loading: document.getElementById("game-loading"),
     card: document.getElementById("player-card"),
-    heading: document.getElementById("player-heading"),
     description: document.getElementById("player-description"),
     score: document.getElementById("player-score"),
     cities: document.getElementById("assigned-cities"),
@@ -38,6 +36,7 @@ import {
     surrender: document.getElementById("surrender-button"),
     confirm: document.getElementById("confirm-route-button"),
     participantCount: document.getElementById("participant-count"),
+    leaderboardPanel: document.getElementById("leaderboard-div"),
     leaderboard: document.getElementById("leaderboard-list"),
     mapHelp: document.getElementById("map-help"),
     mapPanel: document.querySelector(".game-panel"),
@@ -45,6 +44,7 @@ import {
     mapCanvas: document.getElementById("map-canvas"),
     mapScale: document.querySelector(".map-scale-control"),
     overlay: document.getElementById("map-overlay"),
+    victoryTrainOverlay: document.getElementById("victory-train-overlay"),
     victoryOverlay: document.getElementById("victory-overlay"),
     victoryAudio: document.getElementById("victory-audio"),
     trainAudio: document.getElementById("train-audio"),
@@ -66,6 +66,7 @@ import {
   const snapshot = { session: null, player: null, crossword: [] };
   const state = {
     cities: [],
+    assignedCitiesSignature: "",
     routes: [],
     selectedRouteIds: [],
     selectedCityIds: [],
@@ -76,6 +77,7 @@ import {
     syncTimer: null,
     victoryTimer: null,
     victoryConfettiTimer: null,
+    victoryFrame: null,
   };
 
   const pendingOperations = new Map();
@@ -365,10 +367,24 @@ import {
     el.overlay.append(routeLayer, drawCrossword(), cityLayer);
   }
 
-  function formatWordLength(count) {
+  function renderWordLength(count) {
     const form = pluralRules.select(count);
     const template = t(`word_length_${form}`, t("word_length_other"));
-    return template.replace("{count}", numberFormat.format(count));
+    const marker = "{count}";
+    const markerIndex = template.indexOf(marker);
+    if (markerIndex === -1) {
+      el.wordLength.textContent = template;
+      return;
+    }
+
+    const emphasizedCount = document.createElement("strong");
+    emphasizedCount.className = "word-length-count";
+    emphasizedCount.textContent = numberFormat.format(count);
+    el.wordLength.replaceChildren(
+      document.createTextNode(template.slice(0, markerIndex)),
+      emphasizedCount,
+      document.createTextNode(template.slice(markerIndex + marker.length)),
+    );
   }
 
   function formatState(playerState) {
@@ -380,15 +396,6 @@ import {
       won: t("status_won"),
     };
     return labels[playerState] || t("status_unknown");
-  }
-
-  function formatSessionStatus(status) {
-    const labels = {
-      active: t("session_active"),
-      finishing: t("session_finishing"),
-      finished: t("session_finished_status"),
-    };
-    return labels[status] || t("status_unknown");
   }
 
   function renderLeaderboard(rows) {
@@ -418,11 +425,25 @@ import {
 
   function renderAssignedCities() {
     const player = snapshot.player;
-    el.cities.replaceChildren();
     const source = cityById(player?.source_city_id);
     const target = cityById(player?.target_city_id);
-    el.cities.hidden = !snapshot.session || !source || !target;
-    if (!source || !target) return;
+    const signature = snapshot.session && source && target
+      ? JSON.stringify([source.id, source.name, target.id, target.name])
+      : "";
+    if (signature === state.assignedCitiesSignature) {
+      const shouldHide = !signature;
+      if (el.cities.hidden !== shouldHide) el.cities.hidden = shouldHide;
+      return;
+    }
+
+    state.assignedCitiesSignature = signature;
+    el.cities.replaceChildren();
+    if (!signature) {
+      el.cities.hidden = true;
+      return;
+    }
+
+    el.cities.hidden = false;
     for (const [label, city] of [[t("start_city"), source], [t("end_city"), target]]) {
       const item = document.createElement("div");
       const name = document.createElement("span");
@@ -456,18 +477,19 @@ import {
     const player = snapshot.player || { state: "watching_stats" };
     const session = snapshot.session;
     el.card.hidden = false;
-    el.heading.textContent = player.state === "won" ? t("status_won") : t("statistics_title");
+    el.playerState.textContent = formatState(player.state);
     el.description.textContent = player.state === "won"
       ? t("message_won")
       : t(`help_${player.state}`, t("help_watching_stats"));
-    el.timer.textContent = formatState(player.state);
-    el.status.textContent = session ? formatSessionStatus(session.status) : t("session_none");
-    el.status.dataset.state = player.state;
+    const hideLeaderboard = player.state === "selecting_route";
+    if (el.leaderboardPanel.hidden !== hideLeaderboard) {
+      el.leaderboardPanel.hidden = hideLeaderboard;
+    }
     const score = Math.max(0, Number(player.session_score) || 0);
     el.score.hidden = !session;
     el.score.textContent = `${t("session_score")}: ${numberFormat.format(score)}`;
     if (player.state === "won") {
-      showMessage(t("message_won"), "victory");
+      showMessage(t("victory_message"), "victory");
     } else if (el.message.dataset.kind === "victory") {
       clearMessage();
     }
@@ -496,18 +518,21 @@ import {
   }
 
   function clearVictoryTimers() {
+    if (state.victoryFrame !== null) window.cancelAnimationFrame(state.victoryFrame);
     if (state.victoryTimer !== null) window.clearTimeout(state.victoryTimer);
     if (state.victoryConfettiTimer !== null) window.clearInterval(state.victoryConfettiTimer);
+    state.victoryFrame = null;
     state.victoryTimer = null;
     state.victoryConfettiTimer = null;
+    el.victoryTrainOverlay.replaceChildren();
+    el.victoryOverlay.hidden = true;
     el.trainAudio.pause();
     el.trainAudio.currentTime = 0;
     el.victoryAudio.pause();
     el.victoryAudio.currentTime = 0;
   }
 
-  function celebrateVictory() {
-    clearVictoryTimers();
+  function showVictoryCelebration() {
     el.victoryOverlay.hidden = false;
     const play = el.victoryAudio.play();
     if (play?.catch) play.catch(() => {});
@@ -526,6 +551,93 @@ import {
       el.victoryOverlay.hidden = true;
       clearVictoryTimers();
     }, 30000);
+  }
+
+  function finishVictoryTrain() {
+    state.victoryFrame = null;
+    el.victoryTrainOverlay.replaceChildren();
+    el.trainAudio.pause();
+    el.trainAudio.currentTime = 0;
+    showVictoryCelebration();
+  }
+
+  function animateVictoryTrain() {
+    const player = snapshot.player;
+    const routeIds = player?.route_ids || [];
+    const cityPath = buildCityPath(player?.source_city_id, routeIds);
+    const segments = [];
+    for (let index = 0; index < routeIds.length; index += 1) {
+      const source = cityById(cityPath[index]);
+      const target = cityById(cityPath[index + 1]);
+      if (!source || !target) continue;
+      const sourceX = Number(source.left);
+      const sourceY = Number(source.top);
+      const targetX = Number(target.left);
+      const targetY = Number(target.top);
+      const length = Math.hypot(targetX - sourceX, targetY - sourceY);
+      if (length > 0) segments.push({ sourceX, sourceY, targetX, targetY, length });
+    }
+
+    const mapScale = el.victoryTrainOverlay.getBoundingClientRect().width / 4000;
+    if (!segments.length || !mapScale) {
+      finishVictoryTrain();
+      return;
+    }
+
+    const train = svgElement("text", {
+      class: "victory-train",
+      "font-size": 54,
+      "text-anchor": "middle",
+      "dominant-baseline": "central",
+      "aria-hidden": "true",
+    });
+    train.textContent = "🚃🚃";
+    el.victoryTrainOverlay.replaceChildren(train);
+
+    const totalLength = segments.reduce((sum, segment) => sum + segment.length, 0);
+    const duration = Math.max(3300, Math.min(7500, segments.length * 1050));
+    const sideOffset = 12;
+    let startTime = null;
+    const moveTrain = (timestamp) => {
+      if (startTime === null) startTime = timestamp;
+      const progress = Math.min(1, (timestamp - startTime) / duration);
+      let distance = totalLength * progress;
+      let segment = segments[segments.length - 1];
+      for (const candidate of segments) {
+        if (distance <= candidate.length) {
+          segment = candidate;
+          break;
+        }
+        distance -= candidate.length;
+      }
+
+      const segmentProgress = Math.min(1, distance / segment.length);
+      const dx = segment.targetX - segment.sourceX;
+      const dy = segment.targetY - segment.sourceY;
+      const centerX = segment.sourceX + dx * segmentProgress;
+      const centerY = segment.sourceY + dy * segmentProgress;
+      let angle = Math.atan2(dy, dx) * 180 / Math.PI;
+      if (angle > 90) angle -= 180;
+      else if (angle < -90) angle += 180;
+      const x = centerX - dy / segment.length * sideOffset;
+      const y = centerY + dx / segment.length * sideOffset;
+      train.setAttribute("transform", `translate(${x} ${y}) rotate(${angle})`);
+
+      if (progress < 1) {
+        state.victoryFrame = window.requestAnimationFrame(moveTrain);
+      } else {
+        train.remove();
+        finishVictoryTrain();
+      }
+    };
+    state.victoryFrame = window.requestAnimationFrame(moveTrain);
+  }
+
+  function celebrateVictory() {
+    clearVictoryTimers();
+    const play = el.trainAudio.play();
+    if (play?.catch) play.catch(() => {});
+    animateVictoryTrain();
   }
 
   function applySnapshot(incoming, expectedEpoch, options = {}) {
@@ -637,7 +749,6 @@ import {
       if (requestEpoch !== state.epoch) return;
       el.loading.hidden = true;
       showMessage(error.message);
-      el.status.textContent = t("error_connection");
     }
   }
 
@@ -725,7 +836,16 @@ import {
     if (!placement) return;
     el.wordTitle.textContent = t("word_dialog_title");
     el.definition.textContent = placement.definition;
-    el.wordLength.textContent = formatWordLength(placement.letter_count);
+    renderWordLength(placement.letter_count);
+    const placeholders = Array(Math.max(0, Number(placement.letter_count) || 0)).fill("_");
+    for (const hint of placement.hints || []) {
+      if (hint.hint_type === "first_letter" && placeholders.length) {
+        placeholders[0] = hint.value;
+      } else if (hint.hint_type === "last_letter" && placeholders.length) {
+        placeholders[placeholders.length - 1] = hint.value;
+      }
+    }
+    el.answer.placeholder = placeholders.join("");
     const active = snapshot.player?.state === "playing" && !placement.is_guessed;
     el.answer.disabled = !active || state.busy;
     el.submitGuess.disabled = !active || state.busy;
@@ -744,7 +864,7 @@ import {
       const label = hint.hint_type === "first_letter" ? t("hint_first") : t("hint_last");
       return `${label}: ${hint.value}`;
     });
-    if (hints.length || el.hintFeedback.dataset.kind !== "error") {
+    if (el.hintFeedback.dataset.kind !== "error") {
       setFeedback(el.hintFeedback, hints.join(" · "), "success");
     }
   }
@@ -995,7 +1115,6 @@ import {
       if (requestEpoch === state.epoch) {
         if (!applyErrorProjection(error, requestEpoch, sessionId)) {
           void reloadSessionSnapshot(requestEpoch, sessionId).catch(() => {});
-          return;
         }
         setFeedback(el.hintFeedback, error.message, "error");
       }

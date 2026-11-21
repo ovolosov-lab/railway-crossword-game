@@ -20,20 +20,15 @@ class ApiException(HTTPException):
         code: str,
         message: str,
         details: dict[str, Any] | list[dict[str, Any]] | None = None,
-        round_projection: dict[str, Any] | None = None,
         player_projection: dict[str, Any] | None = None,
         session_projection: dict[str, Any] | None = None,
-        continuous: bool = False,
         headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(status_code=status_code, detail=message, headers=headers)
         self.code = code
         self.details = details
-        self.round_projection = round_projection
         self.player_projection = player_projection
         self.session_projection = session_projection
-        # Continuous-game errors describe a session instead of a shared round.
-        self.continuous = continuous or session_projection is not None
 
 
 _ERROR_CODES_BY_STATUS = {
@@ -55,28 +50,17 @@ def _error_response(
     code: str,
     message: str,
     details: dict[str, Any] | list[dict[str, Any]] | None = None,
-    round_projection: dict[str, Any] | None = None,
     player_projection: dict[str, Any] | None = None,
     session_projection: dict[str, Any] | None = None,
-    continuous: bool = False,
     headers: dict[str, str] | None = None,
 ) -> JSONResponse:
-    if continuous:
-        content: dict[str, Any] = jsonable_encoder(
-            {"error": ErrorProjection(code=code, message=message, details=details)}
-        )
-        if session_projection is not None:
-            content["session"] = session_projection
-        if player_projection is not None:
-            content["player"] = player_projection
-    else:
-        content = jsonable_encoder(
-            ApiErrorResponse(
-                error=ErrorProjection(code=code, message=message, details=details),
-                round=round_projection,
-                player=player_projection,
-            )
-        )
+    content: dict[str, Any] = jsonable_encoder(
+        ApiErrorResponse(error=ErrorProjection(code=code, message=message, details=details))
+    )
+    if session_projection is not None:
+        content["session"] = session_projection
+    if player_projection is not None:
+        content["player"] = player_projection
     return JSONResponse(
         status_code=status_code,
         content=content,
@@ -96,10 +80,8 @@ async def api_exception_handler(
             code=exc.code,
             message=api_messages.get(exc.code, str(exc.detail)),
             details=exc.details,
-            round_projection=exc.round_projection,
             player_projection=exc.player_projection,
             session_projection=exc.session_projection,
-            continuous=exc.continuous,
             headers=exc.headers,
         )
 

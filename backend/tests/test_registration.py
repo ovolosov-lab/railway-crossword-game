@@ -1,4 +1,5 @@
 import unittest
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -10,6 +11,15 @@ from app.database import get_db
 from app.i18n import load_translations
 from app.models import User
 from main import app, settings
+
+
+@contextmanager
+def client_without_lifespan():
+    client = TestClient(app)
+    try:
+        yield client
+    finally:
+        client.close()
 
 
 class UniqueConstraintError(Exception):
@@ -37,7 +47,7 @@ class RegistrationTests(unittest.TestCase):
         app.dependency_overrides.pop(get_db, None)
 
     def register(self, payload: dict[str, str]):
-        with TestClient(app) as client:
+        with client_without_lifespan() as client:
             return client.post("/auth/register/", json=payload)
 
     def valid_payload(self) -> dict[str, str]:

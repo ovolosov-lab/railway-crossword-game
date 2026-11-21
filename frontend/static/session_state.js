@@ -20,7 +20,9 @@ export function mergeSessionSnapshot(current, incoming, { allowSessionReplacemen
 
   return {
     session: incoming.session,
-    player: incoming.player || current.player,
+    player: sameSession && incoming.player
+      ? { ...current.player, ...incoming.player }
+      : incoming.player || current.player,
     crossword: Array.isArray(incoming.crossword)
       ? incoming.crossword
       : sameSession ? (current.crossword || []) : [],

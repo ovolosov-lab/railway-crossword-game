@@ -10,11 +10,7 @@
     <link rel="icon" href="/static/favicon.ico" sizes="any">
     <script src="/static/confetti.js" defer></script>
     <script id="i18n-data" type="application/json">{{ {"lang": lang, "js": translations} | tojson }}</script>
-    {% if continuous_game_enabled %}
     <script type="module" src="/static/game_sessions.js"></script>
-    {% else %}
-    <script src="/static/game.js" defer></script>
-    {% endif %}
   </head>
   <body>
     <main
@@ -28,19 +24,11 @@
           <h1 id="game-title" class="game-title">{{ game_title }}</h1>
           <p class="intro">{{ intro }}</p>
 
-          <div class="round-summary" aria-live="polite" id="timer-block">
-            <div>
-              <span class="summary-label">{{ session_summary_label if continuous_game_enabled else summary_label }}</span>
-              <strong id="round-timer">{{ loading }}</strong>
-            </div>
-            <span class="round-status" id="round-status">{{ session_status }}</span>
-          </div>
-
           <div class="game-message" id="game-message" role="status" hidden></div>
           <div class="game-loading" id="game-loading" role="status">{{ game_loading }}</div>
 
           <section class="player-card" id="player-card" aria-live="polite" hidden>
-            <h2 id="player-heading">{{ statistics }}</h2>
+            <h2 id="player-state">{{ loading }}</h2>
             <p id="player-description"></p>
             <p class="player-score" id="player-score" hidden></p>
             <div class="assigned-cities" id="assigned-cities" hidden></div>
@@ -61,10 +49,9 @@
               class="game-button"
               id="confirm-route-button"
               type="button"
-              {% if continuous_game_enabled %}hidden{% else %}style="display:none"{% endif %}
+              hidden
               disabled
             >{{ confirm_route_button }}</button>
-            <button class="game-button hidden" id="play-with-train" type="button" disabled>{{ play_with_train }}</button>
           </section>
 
           <section class="leaderboard" aria-labelledby="leaderboard-title">
@@ -72,10 +59,10 @@
               <h2 id="leaderboard-title">{{ leaderboard_title }}</h2>
               <span class="participant-count" id="participant-count">{{ participant_count }}</span>
             </div>
-            <div class="leaderboard-div">
-            <ol id="leaderboard-list" class="leaderboard-list">
-              <li class="leaderboard-empty">{{ leaderboard_empty }}</li>
-            </ol>
+            <div class="leaderboard-div" id="leaderboard-div">
+              <ol id="leaderboard-list" class="leaderboard-list">
+                <li class="leaderboard-empty">{{ leaderboard_empty }}</li>
+              </ol>
             </div>
           </section>
         </aside>

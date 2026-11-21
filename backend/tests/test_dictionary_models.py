@@ -3,7 +3,6 @@ import unittest
 from pydantic import ValidationError
 
 from app.database import Base
-from app.game_state import HintResult
 from app.schemas import DictionaryWordClue, DictionaryWordCreate
 import app.models  # noqa: F401
 
@@ -64,19 +63,6 @@ class DictionaryModelTests(unittest.TestCase):
                     "obsolete_field": None,
                 }
             )
-
-    def test_unknown_hint_type_is_response_only(self) -> None:
-        """Keep unavailable hints restricted to response models."""
-        result = HintResult(
-            hint_type="unknown",
-            value="",
-            points_charged=0,
-            already_used=False,
-            score_balance=0,
-        )
-
-        self.assertEqual(result.hint_type, "unknown")
-
 
 if __name__ == "__main__":
     unittest.main()

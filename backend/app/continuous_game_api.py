@@ -1,10 +1,9 @@
 """HTTP API of the continuous game (ADR 0007, ADR 0009).
 
-The handlers only translate HTTP requests: shared state and idempotency live in
-the Redis services (``GameSessions``, ``GameSegments``), victories are committed
-to PostgreSQL by ``GameVictories`` and crosswords are laid out by
-``crossword_generator``. The routers are mounted instead of the MVP routers when
-``CONTINUOUS_GAME_ENABLED`` is set.
+The handlers translate HTTP requests: shared state and idempotency live in the
+Redis services (``GameSessions``, ``GameSegments``), victories are committed to
+PostgreSQL by ``GameVictories`` and crosswords are laid out by
+``crossword_generator``. This is the application's only game API.
 """
 from __future__ import annotations
 
@@ -153,7 +152,6 @@ def _error(
             if player_projection is not None
             else None
         ),
-        continuous=True,
         headers=headers,
     )
 

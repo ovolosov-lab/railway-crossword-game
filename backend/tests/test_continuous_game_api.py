@@ -432,7 +432,7 @@ class ContinuousGameApiTests(unittest.IsolatedAsyncioTestCase):
         poor = await hint(second)
         self.assertEqual(poor.status_code, 403)
         self.assertEqual(poor.json()["error"]["code"], "insufficient_points")
-        self.assertEqual(poor.json()["error"]["message"], "Not enough points to get a hint")
+        self.assertEqual(poor.json()["error"]["message"], "Not enough points to get a hint.")
         self.assertEqual(poor.json()["player"], {"state": "playing", "session_score": 0})
         await self.guess(user, session_id, first)
         cost = self.settings.hint_first_letter_cost
