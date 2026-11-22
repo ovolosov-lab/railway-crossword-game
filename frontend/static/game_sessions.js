@@ -82,6 +82,8 @@ import {
 
   const pendingOperations = new Map();
   let panState = null;
+  let clickX = 100;
+  let clickY = 100;
 
   function t(key, fallback = "") {
     return translations?.[key] || fallback || key;
@@ -546,11 +548,11 @@ import {
       }
     };
     throwConfetti();
-    state.victoryConfettiTimer = window.setInterval(throwConfetti, 6500);
+    state.victoryConfettiTimer = window.setInterval(throwConfetti, 5000);
     state.victoryTimer = window.setTimeout(() => {
       el.victoryOverlay.hidden = true;
       clearVictoryTimers();
-    }, 30000);
+    }, 10000);
   }
 
   function finishVictoryTrain() {
@@ -824,6 +826,8 @@ import {
     if (event.ctrlKey || event.metaKey) return;
     const word = event.target.closest("[data-placement-id]");
     if (word) {
+      clickX = event.pageX;
+      clickY = event.pageY;      
       openPlacementDialog(word.getAttribute("data-placement-id"));
       return;
     }
@@ -1052,7 +1056,13 @@ import {
         }
         drawMap();
         setFeedback(el.wordFeedback, `${t("answer")}: ${result.guess.revealed_word}`, "success");
-        if (result.guess.result === "already_solved") showMessage(t("already_solved"), "success");
+        if (result.guess.result === "already_solved") {
+          showMessage(t("already_solved"), "success");
+        } else {
+          if (result.player?.state !== "won") {
+            showEmojiBlock();
+          }  
+        }  
       }
       if (["correct", "already_solved"].includes(result.guess?.result)) {
         state.activePlacementId = null;
@@ -1212,6 +1222,21 @@ import {
     window.addEventListener("keyup", (event) => {
       if (event.key === "Control" || event.key === "Meta") el.mapScroll.classList.remove("can-pan");
     });
+  }
+
+  function showEmojiBlock() {
+      const emojiBlock = document.getElementById('emojiBlock');
+      const images = ['👏', '👌', '👍', '👋', '🏆'];
+
+      const randomIndex = Math.floor(Math.random() * images.length);
+      emojiBlock.innerHTML = images[randomIndex];
+      emojiBlock.style.left = `${clickX+15}px`;
+      emojiBlock.style.top = `${clickY+15}px`;
+      emojiBlock.classList.remove('hidden');
+
+      setTimeout(() => {
+        emojiBlock.classList.add('hidden');
+      }, 2300);
   }
 
   el.mapScale.addEventListener("change", (event) => {
