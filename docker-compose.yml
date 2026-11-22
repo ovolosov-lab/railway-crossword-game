@@ -27,7 +27,7 @@ services:
       HINT_FIRST_LETTER_COST: ${HINT_FIRST_LETTER_COST:-20}
       HINT_LAST_LETTER_COST: ${HINT_LAST_LETTER_COST:-30}
     ports:
-      - "80:8000"
+      - "127.0.0.1:${APP_HOST_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -75,7 +75,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in the root .env file}
       POSTGRES_DB: ${DB_NAME:?Set DB_NAME in the root .env file}
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
