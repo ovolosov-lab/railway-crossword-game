@@ -111,6 +111,7 @@ class DictionaryWordCreate(Schema):
 class DictionaryImportWord(Schema):
     word: str = Field(min_length=1, max_length=100)
     description: str = Field(min_length=1)
+    language: LanguageCode
 
     @field_validator("word", mode="before")
     @classmethod

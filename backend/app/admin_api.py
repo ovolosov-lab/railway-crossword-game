@@ -33,7 +33,7 @@ async def add_dictionary_words(
     user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> DictionaryImportResponse:
-    if user.username != "admin":
+    if user.username != "administrator":
         raise ApiException(
             status_code=status.HTTP_403_FORBIDDEN,
             code="admin_required",
@@ -44,7 +44,7 @@ async def add_dictionary_words(
         {
             "word_text": item.word,
             "definition": item.description,
-            "language_code": "ru",
+            "language_code": item.language,
             "letter_count": len(item.word),
         }
         for item in payload.dictionary
@@ -72,4 +72,4 @@ async def add_dictionary_words(
             message="Dictionary words could not be added at this time.",
         ) from exc
 
-    return DictionaryImportResponse(added=result.rowcount or 0)
+    return DictionaryImportResponse(added=result.rowcount or 0) # pyright: ignore[reportAttributeAccessIssue]
