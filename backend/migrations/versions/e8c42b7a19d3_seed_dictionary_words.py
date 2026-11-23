@@ -6,6 +6,7 @@ Create Date: 2026-10-31
 
 Duplicate words are compared case-insensitively after Unicode normalization
 and mapping ё to е. The first occurrence in numbered file/line order wins.
+Malformed rows are skipped with a warning; valid rows continue to be imported.
 Downgrade removes the imported rows; it does not restore prior dictionary
 contents, so upgrade requires an empty dictionary_words table. Keep the CSV
 files immutable after this revision is applied; later catalog changes require
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import re
 import unicodedata
 from pathlib import Path
@@ -34,6 +36,7 @@ _WORD_FILE_PATTERNS = (
     re.compile(r"^кроссворд_подсказки_часть_(\d+)\.csv$"),
 )
 _LANGUAGE_CODE = "ru"
+_LOGGER = logging.getLogger("alembic.runtime.migration")
 
 
 def _migration_data_dir() -> Path:
@@ -77,41 +80,75 @@ def _read_word_catalog() -> tuple[list[dict[str, object]], int]:
 
     for path in _word_files():
         with path.open(encoding="utf-8-sig", newline="") as source:
-            for line_number, fields in enumerate(
-                csv.reader(source, delimiter=";"), start=1
-            ):
-                if len(fields) != 2:
-                    raise ValueError(
-                        f"{path.name}:{line_number}: expected exactly two "
-                        "semicolon-separated columns."
+            for line_number, raw_line in enumerate(source, start=1):
+                if not raw_line.strip():
+                    continue
+                try:
+                    fields = next(
+                        csv.reader([raw_line], delimiter=";", strict=True)
                     )
+                except csv.Error as exc:
+                    _LOGGER.warning(
+                        "Skipping malformed dictionary row %s:%d: %s",
+                        path.name,
+                        line_number,
+                        exc,
+                    )
+                    continue
+
+                if len(fields) != 2:
+                    _LOGGER.warning(
+                        "Skipping malformed dictionary row %s:%d: expected "
+                        "exactly two semicolon-separated columns, got %d",
+                        path.name,
+                        line_number,
+                        len(fields),
+                    )
+                    continue
 
                 raw_word, raw_definition = fields
                 word_text = unicodedata.normalize("NFC", raw_word.strip())
                 if not word_text:
-                    raise ValueError(f"{path.name}:{line_number}: word is empty.")
-                if len(word_text) > 100:
-                    raise ValueError(
-                        f"{path.name}:{line_number}: word exceeds 100 characters."
+                    _LOGGER.warning(
+                        "Skipping malformed dictionary row %s:%d: word is empty",
+                        path.name,
+                        line_number,
                     )
+                    continue
+                if len(word_text) > 100:
+                    _LOGGER.warning(
+                        "Skipping malformed dictionary row %s:%d: word exceeds "
+                        "100 characters",
+                        path.name,
+                        line_number,
+                    )
+                    continue
+
+                definition = raw_definition.strip()
+                if not definition:
+                    _LOGGER.warning(
+                        "Skipping malformed dictionary row %s:%d: definition "
+                        "is empty",
+                        path.name,
+                        line_number,
+                    )
+                    continue
+
+                letter_count = _letter_count(word_text)
+                if not 0 < letter_count <= 32767:
+                    _LOGGER.warning(
+                        "Skipping malformed dictionary row %s:%d: invalid "
+                        "letter count %d",
+                        path.name,
+                        line_number,
+                        letter_count,
+                    )
+                    continue
 
                 duplicate_key = _normalized_duplicate_key(word_text)
                 if duplicate_key in seen_words:
                     skipped_duplicates += 1
                     continue
-
-                definition = raw_definition.strip()
-                if not definition:
-                    raise ValueError(
-                        f"{path.name}:{line_number}: definition is empty."
-                    )
-
-                letter_count = _letter_count(word_text)
-                if not 0 < letter_count <= 32767:
-                    raise ValueError(
-                        f"{path.name}:{line_number}: word must contain "
-                        "between 1 and 32767 letters."
-                    )
 
                 seen_words.add(duplicate_key)
                 rows.append(

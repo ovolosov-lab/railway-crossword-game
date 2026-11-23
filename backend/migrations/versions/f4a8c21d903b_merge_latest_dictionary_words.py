@@ -5,12 +5,14 @@ Revises: e8c42b7a19d3
 Create Date: 2026-11-13
 
 For normalized duplicate words, the last occurrence in numbered file/line order
-wins. Existing definitions are backed up so downgrade can restore them.
+wins. Malformed rows are skipped with a warning. Existing definitions are backed
+up so downgrade can restore them.
 """
 from __future__ import annotations
 
 import csv
 import json
+import logging
 import re
 import unicodedata
 from pathlib import Path
@@ -33,6 +35,7 @@ _WORD_FILE_PATTERNS = (
 )
 _LANGUAGE_CODE = "ru"
 _BACKUP_TABLE_NAME = "dictionary_word_seed_backup_f4a8c21d903b"
+_LOGGER = logging.getLogger("alembic.runtime.migration")
 
 
 def _migration_data_dir() -> Path:
@@ -72,36 +75,70 @@ def _read_word_catalog() -> tuple[list[dict[str, object]], int]:
 
     for path in _word_files():
         with path.open(encoding="utf-8-sig", newline="") as source:
-            for line_number, fields in enumerate(
-                csv.reader(source, delimiter=";"), start=1
-            ):
-                if len(fields) != 2:
-                    raise ValueError(
-                        f"{path.name}:{line_number}: expected exactly two "
-                        "semicolon-separated columns."
+            for line_number, raw_line in enumerate(source, start=1):
+                if not raw_line.strip():
+                    continue
+                try:
+                    fields = next(
+                        csv.reader([raw_line], delimiter=";", strict=True)
                     )
+                except csv.Error as exc:
+                    _LOGGER.warning(
+                        "Skipping malformed dictionary row %s:%d: %s",
+                        path.name,
+                        line_number,
+                        exc,
+                    )
+                    continue
+
+                if len(fields) != 2:
+                    _LOGGER.warning(
+                        "Skipping malformed dictionary row %s:%d: expected "
+                        "exactly two semicolon-separated columns, got %d",
+                        path.name,
+                        line_number,
+                        len(fields),
+                    )
+                    continue
 
                 raw_word, raw_definition = fields
                 word_text = unicodedata.normalize("NFC", raw_word.strip())
                 if not word_text:
-                    raise ValueError(f"{path.name}:{line_number}: word is empty.")
-                if len(word_text) > 100:
-                    raise ValueError(
-                        f"{path.name}:{line_number}: word exceeds 100 characters."
+                    _LOGGER.warning(
+                        "Skipping malformed dictionary row %s:%d: word is empty",
+                        path.name,
+                        line_number,
                     )
+                    continue
+                if len(word_text) > 100:
+                    _LOGGER.warning(
+                        "Skipping malformed dictionary row %s:%d: word exceeds "
+                        "100 characters",
+                        path.name,
+                        line_number,
+                    )
+                    continue
 
                 definition = raw_definition.strip()
                 if not definition:
-                    raise ValueError(
-                        f"{path.name}:{line_number}: definition is empty."
+                    _LOGGER.warning(
+                        "Skipping malformed dictionary row %s:%d: definition "
+                        "is empty",
+                        path.name,
+                        line_number,
                     )
+                    continue
 
                 letter_count = len(word_text)
                 if not 0 < letter_count <= 32767:
-                    raise ValueError(
-                        f"{path.name}:{line_number}: word must contain "
-                        "between 1 and 32767 letters."
+                    _LOGGER.warning(
+                        "Skipping malformed dictionary row %s:%d: invalid "
+                        "letter count %d",
+                        path.name,
+                        line_number,
+                        letter_count,
                     )
+                    continue
 
                 duplicate_key = _normalized_duplicate_key(word_text)
                 row = {
