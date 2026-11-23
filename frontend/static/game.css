@@ -505,6 +505,31 @@
   transform: translate(-50%, -50%);
 }
 
+.victory-santa-train {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  height: auto;
+  pointer-events: none;
+}
+
+.victory-santa-train[hidden] {
+  display: none;
+}
+
+.victory-santa-train.is-animating {
+  animation: victory-santa-pass 5200ms linear both;
+}
+
+@keyframes victory-santa-pass {
+  from {
+    transform: translateX(100vw);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
 @keyframes victory-trophy-bob {
   from {
     transform: translate(-50%, calc(-50% - 12px));

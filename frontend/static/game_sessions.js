@@ -46,6 +46,7 @@ import {
     overlay: document.getElementById("map-overlay"),
     victoryTrainOverlay: document.getElementById("victory-train-overlay"),
     victoryOverlay: document.getElementById("victory-overlay"),
+    santaTrain: document.getElementById("victory-santa-train"),
     victoryAudio: document.getElementById("victory-audio"),
     trainAudio: document.getElementById("train-audio"),
     wordDialog: document.getElementById("word-dialog"),
@@ -78,6 +79,7 @@ import {
     victoryTimer: null,
     victoryConfettiTimer: null,
     victoryFrame: null,
+    santaTrainSessionId: null,
   };
 
   const pendingOperations = new Map();
@@ -513,6 +515,7 @@ import {
     state.selectedRouteIds = [];
     state.selectedCityIds = [];
     state.activePlacementId = null;
+    state.santaTrainSessionId = null;
     if (el.wordDialog.open) el.wordDialog.close();
     el.victoryOverlay.hidden = true;
     clearVictoryTimers();
@@ -528,6 +531,9 @@ import {
     state.victoryConfettiTimer = null;
     el.victoryTrainOverlay.replaceChildren();
     el.victoryOverlay.hidden = true;
+    el.santaTrain.hidden = true;
+    el.santaTrain.classList.remove("is-animating");
+    el.santaTrain.onanimationend = null;
     el.trainAudio.pause();
     el.trainAudio.currentTime = 0;
     el.victoryAudio.pause();
@@ -536,6 +542,7 @@ import {
 
   function showVictoryCelebration() {
     el.victoryOverlay.hidden = false;
+    animateVictorySantaTrain();
     const play = el.victoryAudio.play();
     if (play?.catch) play.catch(() => {});
     const throwConfetti = () => {
@@ -553,6 +560,23 @@ import {
       el.victoryOverlay.hidden = true;
       clearVictoryTimers();
     }, 10000);
+  }
+
+  function animateVictorySantaTrain() {
+    const sessionId = String(snapshot.session?.id || "");
+    if (!sessionId || state.santaTrainSessionId === sessionId) return;
+    state.santaTrainSessionId = sessionId;
+
+    const mapBounds = el.mapScroll.getBoundingClientRect();
+    el.santaTrain.style.width = `${Math.min(620, Math.max(240, window.innerWidth * 0.58))}px`;
+    el.santaTrain.style.bottom = `${window.innerHeight - mapBounds.bottom + 12}px`;
+    el.santaTrain.hidden = false;
+    el.santaTrain.onanimationend = () => {
+      el.santaTrain.hidden = true;
+      el.santaTrain.classList.remove("is-animating");
+      el.santaTrain.onanimationend = null;
+    };
+    el.santaTrain.classList.add("is-animating");
   }
 
   function finishVictoryTrain() {
@@ -906,6 +930,7 @@ import {
       state.selectedRouteIds = [];
       state.selectedCityIds = [];
       clearVictoryTimers();
+      state.santaTrainSessionId = null;
       el.victoryOverlay.hidden = true;
       if (!applySnapshot(result, requestEpoch, { allowSessionReplacement: true, live: false })) {
         await reloadSessionSnapshot(requestEpoch, result.session.id);
@@ -1123,10 +1148,14 @@ import {
       }
     } catch (error) {
       if (requestEpoch === state.epoch) {
+        if (error.code === "insufficient_points") {
+          setFeedback(el.hintFeedback, error.message, "error");
+          return;
+        }
+        setFeedback(el.hintFeedback, error.message, "error");
         if (!applyErrorProjection(error, requestEpoch, sessionId)) {
           void reloadSessionSnapshot(requestEpoch, sessionId).catch(() => {});
         }
-        setFeedback(el.hintFeedback, error.message, "error");
       }
     } finally {
       if (requestEpoch === state.epoch) {
