@@ -18,7 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
-from app.admin_api import router as admin_router
+from app.admin_api import dict_file_router, router as admin_router
 from app.api_errors import api_exception_handler, request_validation_exception_handler
 from app.config import get_settings
 from app.database import engine, get_db, AsyncSessionLocal
@@ -182,6 +182,7 @@ async def fence_stale_game_worker(request: Request, call_next):
 
 app.include_router(auth_router)
 app.include_router(admin_router)
+app.include_router(dict_file_router)
 app.include_router(continuous_game_router)
 app.include_router(continuous_game_write_router)
 project_root = Path(__file__).resolve().parents[1]

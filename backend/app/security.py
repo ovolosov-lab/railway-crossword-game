@@ -57,6 +57,25 @@ async def get_authenticated_user(
     if token is None:
         return None
 
+    return await _get_user_for_token(token, session)
+
+
+async def get_authenticated_user_from_header(
+    session: Annotated[AsyncSession, Depends(get_db)],
+    authorization: Annotated[
+        str | None,
+        Header(alias="Authorization"),
+    ] = None,
+) -> User | None:
+    if authorization is None:
+        return None
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].casefold() != "bearer":
+        return None
+    return await _get_user_for_token(parts[1], session)
+
+
+async def _get_user_for_token(token: str, session: AsyncSession) -> User | None:
     settings = get_settings()
     try:
         claims = jwt.decode(
@@ -95,6 +114,22 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             code="authentication_required",
             message="A valid authentication cookie is required.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+
+async def get_current_user_from_header(
+    user: Annotated[
+        User | None,
+        Depends(get_authenticated_user_from_header),
+    ],
+) -> User:
+    if user is None:
+        raise ApiException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            code="authentication_required",
+            message="A valid bearer token is required.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
