@@ -55,6 +55,7 @@ class PlayerSession(BaseModel):
     id: UUID
     user_id: UUID
     generation_id: UUID
+    round_id: UUID
     state: Literal["selecting_route", "playing", "finishing", "won"]
     source_city_id: int
     target_city_id: int
@@ -93,7 +94,9 @@ return {"ok", redis.call("HGETALL", KEYS[2])}
 
 _JOIN = _TYPE_CHECK + """
 if not check_type(KEYS[2], "hash") or not check_type(KEYS[3], "hash")
-   or not check_type(KEYS[4], "hash") then return {"corrupt"} end
+   or not check_type(KEYS[4], "hash") or not check_type(KEYS[5], "string") then
+    return {"corrupt"}
+end
 local existing_id = redis.call("HGET", KEYS[2], "id")
 local previous_id = redis.call("HGET", KEYS[4], ARGV[3])
 if previous_id then
@@ -101,8 +104,12 @@ if previous_id then
     return {"ok", redis.call("HGETALL", KEYS[2])}
 end
 if redis.call("EXISTS", KEYS[2]) == 1 and not existing_id then return {"corrupt"} end
+local state = nil
+local existing_round_id = nil
 if existing_id then
-    local state = redis.call("HGET", KEYS[2], "state")
+    state = redis.call("HGET", KEYS[2], "state")
+    existing_round_id = redis.call("HGET", KEYS[2], "round_id")
+    if not existing_round_id or not redis.call("GET", KEYS[5]) then return {"corrupt"} end
     if state == "finishing" then return {"finishing", redis.call("HGETALL", KEYS[2])} end
     if state == "selecting_route" or state == "playing" then
         redis.call("HSET", KEYS[4], ARGV[3], existing_id)
@@ -113,16 +120,23 @@ end
 local pair = nil
 local source = nil
 local target = nil
-for i = 5, #ARGV - 1, 3 do
+for i = 6, #ARGV - 1, 3 do
     if not redis.call("HGET", KEYS[3], ARGV[i]) then
         pair, source, target = ARGV[i], ARGV[i + 1], ARGV[i + 2]
         break
     end
 end
 if not pair then return {"no_pair"} end
+local current_round_id = redis.call("GET", KEYS[5])
+local round_id = current_round_id
+if not round_id or (state == "won" and existing_round_id == current_round_id) then
+    round_id = ARGV[5]
+    redis.call("SET", KEYS[5], round_id)
+end
 redis.call("HSET", KEYS[3], pair, ARGV[2])
 redis.call("HSET", KEYS[2],
     "id", ARGV[2], "user_id", ARGV[1], "generation_id", ARGV[#ARGV],
+    "round_id", round_id,
     "state", "selecting_route", "source_city_id", source, "target_city_id", target,
     "route_ids", "[]", "session_score", "0", "hints", "{}",
     "state_version", "1", "started_at", ARGV[4], "victory_snapshot", "null")
@@ -140,6 +154,7 @@ if previous_id then
 end
 local session_id = redis.call("HGET", KEYS[2], "id")
 if not session_id or session_id ~= ARGV[1] then return {"not_found"} end
+if redis.call("HGET", KEYS[2], "round_id") ~= ARGV[5] then return {"corrupt"} end
 local state = redis.call("HGET", KEYS[2], "state")
 if state == "finishing" then return {"finishing", redis.call("HGETALL", KEYS[2])} end
 if state == "won" then return {"won", redis.call("HGETALL", KEYS[2])} end
@@ -153,7 +168,8 @@ if redis.call("HGET", KEYS[3], pair) ~= session_id then return {"corrupt"} end
 for i = 5, #KEYS, 2 do
     if not check_type(KEYS[i], "set")
        or redis.call("SISMEMBER", KEYS[i], session_id) ~= 1
-       or redis.call("EXISTS", KEYS[i + 1]) ~= 1 then
+       or redis.call("TYPE", KEYS[i + 1]).ok ~= "hash"
+       or redis.call("HGET", KEYS[i + 1], "round_id") ~= ARGV[5] then
         return {"corrupt"}
     end
     if redis.call("TYPE", KEYS[i + 1]).ok == "hash"
@@ -212,15 +228,20 @@ class GameSessions:
     def city_pairs_key(self) -> str:
         return self.generation.key("city_pairs")
 
+    def current_round_key(self) -> str:
+        return self.generation.key("current_round_id")
+
     def _operation_key(self, user_id: UUID, operation: str) -> str:
         return self.generation.key(f"operations:{operation}:{user_id}")
 
-    def segment_keys(self, route_id: int) -> tuple[str, str]:
+    def segment_keys(self, round_id: UUID, route_id: int) -> tuple[str, str]:
+        if not isinstance(round_id, UUID):
+            raise ValueError("Round IDs must be UUIDs.")
         if type(route_id) is not int or not 0 < route_id <= _MAX_DATABASE_ID:
             raise ValueError("Route IDs must be positive integers.")
         return (
-            self.generation.key(f"segment:{route_id}:sessions"),
-            self.generation.key(f"segment:{route_id}:state"),
+            self.generation.key(f"segment:{round_id}:{route_id}:sessions"),
+            self.generation.key(f"segment:{round_id}:{route_id}:state"),
         )
 
     def _decode_session(self, fields: object, user_id: UUID) -> tuple[PlayerSession, str]:
@@ -291,13 +312,16 @@ class GameSessions:
         secrets.SystemRandom().shuffle(candidates)
         args: list[str | int] = [
             str(user_id), str(uuid4()), str(idempotency_key),
-            datetime.now(timezone.utc).isoformat(),
+            datetime.now(timezone.utc).isoformat(), str(uuid4()),
         ]
         for (first, second), (source, target) in candidates:
             args.extend((f"{first}:{second}", source, target))
         result = await self.generation.execute(
             _JOIN,
-            keys=[self.session_key(user_id), self.city_pairs_key(), self._operation_key(user_id, "join")],
+            keys=[
+                self.session_key(user_id), self.city_pairs_key(),
+                self._operation_key(user_id, "join"), self.current_round_key(),
+            ],
             args=args,
         )
         if not isinstance(result, list) or not result:
@@ -323,14 +347,17 @@ class GameSessions:
             if current is not None and current[0].id == session_id:
                 route_ids_json = current[1]
                 for route_id in current[0].route_ids:
-                    segment_keys.extend(self.segment_keys(route_id))
+                    segment_keys.extend(self.segment_keys(current[0].round_id, route_id))
             result = await self.generation.execute(
                 _SURRENDER,
                 keys=[
                     self.session_key(user_id), self.city_pairs_key(),
                     self._operation_key(user_id, "surrender"), *segment_keys,
                 ],
-                args=[str(session_id), str(idempotency_key), route_ids_json, str(user_id)],
+                args=[
+                    str(session_id), str(idempotency_key), route_ids_json,
+                    str(user_id), str(current[0].round_id) if current is not None else "",
+                ],
             )
             if not isinstance(result, list) or not result:
                 raise SessionStorageError("Invalid Redis response.")

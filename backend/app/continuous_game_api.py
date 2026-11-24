@@ -435,7 +435,9 @@ async def auto_route(
     with _database_errors(request):
         routes = list((await db.scalars(select(Route).order_by(Route.id))).all())
     with _storage_errors(request):
-        published = await services.segments.published_words([route.id for route in routes])
+        published = await services.segments.published_words(
+            session.round_id, [route.id for route in routes]
+        )
     route_ids = await asyncio.to_thread(
         find_random_route_path,
         routes,
@@ -555,7 +557,9 @@ async def confirm_route(
     confirmed: PlayerSession | None = None
     for attempt in range(_CONFIRM_ATTEMPTS):
         with _storage_errors(request):
-            published = await services.segments.published_words(payload.route_ids)
+            published = await services.segments.published_words(
+                session.round_id, payload.route_ids
+            )
         if _solved_path(published, payload.route_ids):
             raise _error(request, "route_already_solved", status.HTTP_409_CONFLICT, session)
         with _database_errors(request):

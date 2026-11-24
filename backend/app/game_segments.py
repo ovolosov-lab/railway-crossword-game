@@ -113,6 +113,7 @@ class VictorySnapshot(BaseModel):
 
     session_id: UUID
     user_id: UUID
+    round_id: UUID
     started_at: datetime
     finished_at_unix: str
     session_score: int
@@ -138,6 +139,7 @@ class VictorySnapshot(BaseModel):
             if (
                 snapshot.session_id != session.id
                 or snapshot.user_id != session.user_id
+                or snapshot.round_id != session.round_id
                 or snapshot.started_at != session.started_at
                 or snapshot.started_at.utcoffset() is None
                 or finished_at < snapshot.started_at
@@ -221,7 +223,8 @@ _CONFIRM = _TYPE_CHECK + """
 if not valid_type(KEYS[2], "hash") or not valid_type(KEYS[3], "hash") then return {"corrupt"} end
 if redis.call("HGET", KEYS[2], "id") ~= ARGV[1] then return {"not_found"} end
 if redis.call("HGET", KEYS[2], "user_id") ~= ARGV[4]
-   or redis.call("HGET", KEYS[2], "generation_id") ~= ARGV[#ARGV] then return {"corrupt"} end
+   or redis.call("HGET", KEYS[2], "generation_id") ~= ARGV[#ARGV]
+   or redis.call("HGET", KEYS[2], "round_id") ~= ARGV[5] then return {"corrupt"} end
 local state = redis.call("HGET", KEYS[2], "state")
 if state ~= "selecting_route" then
     if redis.call("HGET", KEYS[2], "route_ids") == ARGV[2] then
@@ -250,6 +253,9 @@ for i = 4, #KEYS, 2 do
     local has_segment = redis.call("EXISTS", segment) == 1
     local has_refs = redis.call("SCARD", refs) > 0
     if has_segment ~= has_refs then return {"corrupt"} end
+    if has_segment and redis.call("HGET", segment, "round_id") ~= ARGV[5] then
+        return {"corrupt"}
+    end
     local encoded = has_segment and redis.call("HGET", segment, "words") or proposals[index]
     if not encoded or encoded == cjson.null then return {"missing_proposal"} end
     local ok, words = pcall(cjson.decode, encoded)
@@ -277,7 +283,7 @@ if unsolved == 0 then return {"solved"} end
 for i = 4, #KEYS, 2 do
     local index = (i - 4) / 2 + 1
     if redis.call("EXISTS", KEYS[i + 1]) == 0 then
-        redis.call("HSET", KEYS[i + 1], "words", all_words[index])
+        redis.call("HSET", KEYS[i + 1], "round_id", ARGV[5], "words", all_words[index])
     end
     redis.call("HSET", KEYS[i + 1], "owner:" .. ARGV[1], ARGV[4])
     redis.call("SADD", KEYS[i], ARGV[1])
@@ -291,7 +297,8 @@ _READ_SEGMENTS = _TYPE_CHECK + """
 if not valid_type(KEYS[2], "hash") then return {"corrupt"} end
 if redis.call("HGET", KEYS[2], "id") ~= ARGV[1] then return {"not_found"} end
 if redis.call("HGET", KEYS[2], "user_id") ~= ARGV[3]
-   or redis.call("HGET", KEYS[2], "generation_id") ~= ARGV[#ARGV] then return {"corrupt"} end
+   or redis.call("HGET", KEYS[2], "generation_id") ~= ARGV[#ARGV]
+   or redis.call("HGET", KEYS[2], "round_id") ~= ARGV[4] then return {"corrupt"} end
 if redis.call("HGET", KEYS[2], "route_ids") ~= ARGV[2] then return {"retry"} end
 local state = redis.call("HGET", KEYS[2], "state")
 if state ~= "playing" and state ~= "finishing" then
@@ -300,7 +307,10 @@ end
 local result = {"ok", redis.call("HGETALL", KEYS[2]), {}}
 for i = 3, #KEYS, 2 do
     if key_type(KEYS[i]) ~= "set" or key_type(KEYS[i + 1]) ~= "hash"
-       or redis.call("SISMEMBER", KEYS[i], ARGV[1]) ~= 1 then return {"corrupt"} end
+       or redis.call("SISMEMBER", KEYS[i], ARGV[1]) ~= 1
+       or redis.call("HGET", KEYS[i + 1], "round_id") ~= ARGV[4] then
+        return {"corrupt"}
+    end
     local words = redis.call("HGET", KEYS[i + 1], "words")
     if not words then return {"corrupt"} end
     if redis.call("HGET", KEYS[i + 1], "owner:" .. ARGV[1]) ~= ARGV[3] then return {"corrupt"} end
@@ -322,7 +332,9 @@ if key_type(KEYS[2]) ~= "hash" or key_type(KEYS[3]) ~= "set"
    or key_type(KEYS[4]) ~= "hash" or not valid_type(KEYS[5], "hash") then return {"corrupt"} end
 if redis.call("HGET", KEYS[2], "id") ~= ARGV[1] then return {"not_found"} end
 if redis.call("HGET", KEYS[2], "user_id") ~= ARGV[6]
-   or redis.call("HGET", KEYS[2], "generation_id") ~= ARGV[#ARGV] then return {"corrupt"} end
+   or redis.call("HGET", KEYS[2], "generation_id") ~= ARGV[#ARGV]
+   or redis.call("HGET", KEYS[2], "round_id") ~= ARGV[8]
+   or redis.call("HGET", KEYS[4], "round_id") ~= ARGV[8] then return {"corrupt"} end
 if redis.call("HGET", KEYS[2], "state") ~= "playing" then
     return {"not_playing", redis.call("HGETALL", KEYS[2])}
 end
@@ -360,6 +372,7 @@ for _, participant in ipairs(plan) do
     if key_type(session_key) ~= "hash" then return {"retry"} end
     if redis.call("HGET", session_key, "id") ~= participant.id
        or redis.call("HGET", session_key, "user_id") ~= participant.user_id
+       or redis.call("HGET", session_key, "round_id") ~= ARGV[8]
        or redis.call("HGET", session_key, "state") ~= "playing"
        or redis.call("HGET", session_key, "route_ids") ~= participant.route_ids then
         return {"retry"}
@@ -379,7 +392,8 @@ for _, participant in ipairs(plan) do
     local includes_target = false
     for _, route in ipairs(participant.routes) do
         if key_type(KEYS[route.refs]) ~= "set" or key_type(KEYS[route.state]) ~= "hash"
-           or redis.call("SISMEMBER", KEYS[route.refs], participant.id) ~= 1 then
+           or redis.call("SISMEMBER", KEYS[route.refs], participant.id) ~= 1
+           or redis.call("HGET", KEYS[route.state], "round_id") ~= ARGV[8] then
             return {"retry"}
         end
         local route_words = redis.call("HGET", KEYS[route.state], "words")
@@ -405,6 +419,7 @@ for _, participant in ipairs(plan) do
         local finished_at = string.format("%.6f", math.max(redis_time, participant.started_unix))
         snapshot = '{"session_id":' .. cjson.encode(participant.id)
             .. ',"user_id":' .. cjson.encode(participant.user_id)
+            .. ',"round_id":' .. cjson.encode(ARGV[8])
             .. ',"started_at":' .. cjson.encode(started)
             .. ',"finished_at_unix":' .. cjson.encode(finished_at)
             .. ',"session_score":' .. string.format("%.0f", new_score)
@@ -433,7 +448,9 @@ if key_type(KEYS[2]) ~= "hash" or key_type(KEYS[3]) ~= "set" or key_type(KEYS[4]
 end
 if redis.call("HGET", KEYS[2], "id") ~= ARGV[1] then return {"not_found"} end
 if redis.call("HGET", KEYS[2], "user_id") ~= ARGV[6]
-   or redis.call("HGET", KEYS[2], "generation_id") ~= ARGV[#ARGV] then return {"corrupt"} end
+   or redis.call("HGET", KEYS[2], "generation_id") ~= ARGV[#ARGV]
+   or redis.call("HGET", KEYS[2], "round_id") ~= ARGV[7]
+   or redis.call("HGET", KEYS[4], "round_id") ~= ARGV[7] then return {"corrupt"} end
 if redis.call("HGET", KEYS[2], "state") ~= "playing" then
     return {"not_playing", redis.call("HGETALL", KEYS[2])}
 end
@@ -482,7 +499,17 @@ for i = 2, #KEYS, 2 do
     if not valid_type(KEYS[i], "set") or not valid_type(KEYS[i + 1], "hash") then
         return {"corrupt"}
     end
-    result[#result + 1] = redis.call("HGET", KEYS[i + 1], "words") or false
+    local has_refs = redis.call("SCARD", KEYS[i]) > 0
+    local has_segment = redis.call("EXISTS", KEYS[i + 1]) == 1
+    if has_refs ~= has_segment then return {"corrupt"} end
+    if has_segment then
+        if redis.call("HGET", KEYS[i + 1], "round_id") ~= ARGV[1] then
+            return {"corrupt"}
+        end
+        result[#result + 1] = redis.call("HGET", KEYS[i + 1], "words") or false
+    else
+        result[#result + 1] = false
+    end
 end
 return {"ok", result}
 """
@@ -517,11 +544,15 @@ class GameSegments:
             raise ValueError("A route must contain distinct segments.")
         if any(route_id not in routes for route_id in proposals):
             raise ValueError("Proposals must belong to the requested route.")
+        current = await self.sessions._read(user_id)
+        if current is None or current[0].id != session_id:
+            raise SessionNotFound("The session is not available for this user.")
+        session = current[0]
         keys = [self.sessions.session_key(user_id), self.sessions.city_pairs_key()]
         encoded_proposals: list[str | None] = []
         seen: set[UUID] = set()
         for route_id in routes:
-            keys.extend(self.sessions.segment_keys(route_id))
+            keys.extend(self.sessions.segment_keys(session.round_id, route_id))
             words = proposals.get(route_id)
             if words is None:
                 encoded_proposals.append(None)
@@ -541,6 +572,7 @@ class GameSegments:
                 json.dumps(routes, separators=(",", ":")),
                 json.dumps(encoded_proposals, ensure_ascii=False),
                 str(user_id),
+                str(session.round_id),
             ],
         )
         if not isinstance(result, list) or not result:
@@ -560,7 +592,7 @@ class GameSegments:
         raise SessionStorageError("Invalid shared segment state.")
 
     async def published_words(
-        self, route_ids: Sequence[int]
+        self, round_id: UUID, route_ids: Sequence[int]
     ) -> dict[int, list[PublishedWord]]:
         """Read the words of already published segments; unpublished routes are omitted."""
         routes = list(dict.fromkeys(route_ids))
@@ -568,8 +600,8 @@ class GameSegments:
             return {}
         keys: list[str] = []
         for route_id in routes:
-            keys.extend(self.sessions.segment_keys(route_id))
-        result = await self.generation.execute(_PUBLISHED, keys=keys)
+            keys.extend(self.sessions.segment_keys(round_id, route_id))
+        result = await self.generation.execute(_PUBLISHED, keys=keys, args=[str(round_id)])
         if (
             not isinstance(result, list) or len(result) != 2 or result[0] != "ok"
             or not isinstance(result[1], list) or len(result[1]) != len(routes)
@@ -595,9 +627,10 @@ class GameSegments:
                 raise SessionNotPlaying(current[0])
             keys = [self.sessions.session_key(user_id)]
             for route_id in current[0].route_ids:
-                keys.extend(self.sessions.segment_keys(route_id))
+                keys.extend(self.sessions.segment_keys(current[0].round_id, route_id))
             result = await self.generation.execute(
-                _READ_SEGMENTS, keys=keys, args=[str(session_id), current[1], str(user_id)]
+                _READ_SEGMENTS, keys=keys,
+                args=[str(session_id), current[1], str(user_id), str(current[0].round_id)],
             )
             if not isinstance(result, list) or not result:
                 raise SessionStorageError("Invalid Redis response.")
@@ -678,14 +711,14 @@ class GameSegments:
         self, user_id: UUID, session_id: UUID, placement_id: UUID, answer: str
     ) -> GuessResult:
         for _ in range(5):
-            _, routes_json, segment = await self._locate(user_id, session_id, placement_id)
+            session, routes_json, segment = await self._locate(user_id, session_id, placement_id)
             owners = list(segment.owners.items())
             current = await asyncio.gather(
                 *(self.sessions._read(owner) for _, owner in owners)
             )
             if any(item is None or item[0].id != pair[0] for pair, item in zip(owners, current)):
                 continue
-            refs, state = self.sessions.segment_keys(segment.route_id)
+            refs, state = self.sessions.segment_keys(session.round_id, segment.route_id)
             keys = [
                 self.sessions.session_key(user_id), refs, state,
                 self.pending_victories_key(),
@@ -703,9 +736,11 @@ class GameSegments:
                 if item is None:
                     raise SessionStorageError("A shared session disappeared.")
                 other, other_routes_json = item
+                if other.round_id != session.round_id:
+                    raise SessionStorageError("A shared segment contains a member from another round.")
                 routes = []
                 for route_id in other.route_ids:
-                    route_refs, route_state = self.sessions.segment_keys(route_id)
+                    route_refs, route_state = self.sessions.segment_keys(session.round_id, route_id)
                     routes.append({
                         "id": str(route_id), "refs": index_for(route_refs),
                         "state": index_for(route_state),
@@ -722,6 +757,7 @@ class GameSegments:
                     str(session_id), str(placement_id), normalize_answer(answer),
                     json.dumps(plan, separators=(",", ":")), routes_json,
                     str(user_id), str(segment.route_id),
+                    str(session.round_id),
                 ],
             )
             if not isinstance(result, list) or not result:
@@ -750,12 +786,15 @@ class GameSegments:
         if hint_type not in ("first_letter", "last_letter") or type(cost) is not int or not 0 <= cost <= 2**31 - 1:
             raise ValueError("Invalid hint type or cost.")
         for _ in range(5):
-            _, routes_json, segment = await self._locate(user_id, session_id, placement_id)
-            refs, state = self.sessions.segment_keys(segment.route_id)
+            session, routes_json, segment = await self._locate(user_id, session_id, placement_id)
+            refs, state = self.sessions.segment_keys(session.round_id, segment.route_id)
             result = await self.generation.execute(
                 _HINT,
                 keys=[self.sessions.session_key(user_id), refs, state],
-                args=[str(session_id), str(placement_id), hint_type, cost, routes_json, str(user_id)],
+                args=[
+                    str(session_id), str(placement_id), hint_type, cost,
+                    routes_json, str(user_id), str(session.round_id),
+                ],
             )
             if not isinstance(result, list) or not result:
                 raise SessionStorageError("Invalid Redis response.")

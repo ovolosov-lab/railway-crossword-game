@@ -2,7 +2,7 @@ import os
 import unittest
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import httpx
@@ -20,7 +20,7 @@ from app.config import Settings, get_settings
 from app.continuous_game_api import router, write_router
 from app.database import get_db
 from app.game_generation import GameGeneration, bootstrap_generation
-from app.game_segments import GameSegments
+from app.game_segments import GameSegments, WordProposal
 from app.game_sessions import GameSessions
 from app.game_victories import GameVictories
 from app.models import City, DictionaryWord, GameResult, PhysicalCity, Route, User
@@ -597,6 +597,93 @@ class ContinuousGameApiTests(unittest.IsolatedAsyncioTestCase):
             last = await self.guess(first, first_id, placement)
         self.assertEqual(last.json()["session"]["status"], "finished")
         self.assertEqual((await self.score_and_results(first))[1], 1)
+
+    async def test_same_route_is_shared_within_round_but_isolated_after_new_session(self) -> None:
+        first, second = await self.player(), await self.player()
+        first_join = await self.join(first, [(1, 2)])
+        second_join = await self.join(second, [(1, 3)])
+        first_id, second_id = first_join["session"]["id"], second_join["session"]["id"]
+        first_state = await self.sessions.restore(first)
+        second_state = await self.sessions.restore(second)
+        assert first_state is not None and second_state is not None
+        self.assertEqual(first_state.round_id, second_state.round_id)
+        old_round = first_state.round_id
+
+        def proposal(word: str) -> WordProposal:
+            return WordProposal(
+                placement_id=uuid4(), dictionary_word_id=WORDS.index(word) + 1,
+                word_text=word, definition=DEFINITION_OF[word], offset_px=26,
+            )
+
+        old_word, second_route_word = proposal("train"), proposal("rail")
+        with patch(
+            "app.continuous_game_api._build_proposals",
+            new=AsyncMock(return_value={1: [old_word]}),
+        ):
+            confirmed = await self.confirm(first, first_id, [1])
+        self.assertEqual(confirmed.status_code, 200, confirmed.text)
+        with patch(
+            "app.continuous_game_api._build_proposals",
+            new=AsyncMock(return_value={2: [second_route_word]}),
+        ):
+            confirmed = await self.confirm(second, second_id, [1, 2])
+        self.assertEqual(confirmed.status_code, 200, confirmed.text)
+        shared = [
+            item for item in confirmed.json()["crossword"] if item["route_id"] == 1
+        ]
+        self.assertEqual(len(shared), 1)
+        self.assertEqual(shared[0]["placement_id"], str(old_word.placement_id))
+
+        solved = await self.guess(first, first_id, shared[0])
+        self.assertEqual(solved.status_code, 200, solved.text)
+        self.assertEqual(solved.json()["session"]["status"], "finished")
+        old_active = await self.sessions.restore(second)
+        assert old_active is not None
+        self.assertEqual(old_active.state, "playing")
+        self.assertEqual(old_active.round_id, old_round)
+        old_refs, old_segment = self.sessions.segment_keys(old_round, 1)
+        self.assertEqual(await self.redis.scard(old_refs), 1)
+
+        next_join = await self.join(first, [(1, 2)])
+        next_id = next_join["session"]["id"]
+        new_session = await self.sessions.restore(first)
+        assert new_session is not None
+        self.assertNotEqual(new_session.round_id, old_round)
+        self.assertEqual(new_session.route_ids, [])
+        self.assertIsNone(new_session.victory_snapshot)
+
+        fresh_word = proposal("platform")
+        with patch(
+            "app.continuous_game_api._build_proposals",
+            new=AsyncMock(return_value={1: [fresh_word]}),
+        ):
+            fresh = await self.confirm(first, next_id, [1])
+        self.assertEqual(fresh.status_code, 200, fresh.text)
+        fresh_crossword = fresh.json()["crossword"]
+        self.assertEqual(len(fresh_crossword), 1)
+        self.assertEqual(fresh_crossword[0]["placement_id"], str(fresh_word.placement_id))
+        self.assertFalse(fresh_crossword[0]["is_guessed"])
+        self.assertNotIn("word_text", fresh_crossword[0])
+        new_refs, new_segment = self.sessions.segment_keys(new_session.round_id, 1)
+        self.assertEqual(await self.redis.scard(old_refs), 1)
+        self.assertEqual(await self.redis.scard(new_refs), 1)
+
+        old_sync = await self.call(second, "GET", f"/sync/?session_id={second_id}")
+        self.assertEqual(old_sync.status_code, 200, old_sync.text)
+        old_revealed = next(
+            item for item in old_sync.json()["crossword"] if item["route_id"] == 1
+        )
+        self.assertEqual(old_revealed["placement_id"], str(old_word.placement_id))
+        self.assertTrue(old_revealed["is_guessed"])
+        self.assertEqual(old_revealed["word_text"], "train")
+
+        surrendered = await self.call(
+            second, "POST", "/surrender/", json={"session_id": second_id},
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+        self.assertEqual(surrendered.status_code, 200, surrendered.text)
+        self.assertEqual(await self.redis.exists(old_refs, old_segment), 0)
+        self.assertEqual(await self.redis.exists(new_refs, new_segment), 2)
 
     async def test_no_available_route_when_the_only_path_is_solved(self) -> None:
         # Route 5 (cities 3-5) is the only way to city 5; its words get solved by someone else.

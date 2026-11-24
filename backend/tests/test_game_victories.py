@@ -152,7 +152,7 @@ class GameVictoriesIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await self.segments.guess(first, first_session, word.placement_id, "station")
         self.assertEqual((await self.sessions.restore(second)).state, "finishing")
         await self.victories.finish(first, first_session)
-        refs, state = self.sessions.segment_keys(10)
+        refs, state = self.sessions.segment_keys((await self.sessions.restore(first)).round_id, 10)
         self.assertTrue(await self.redis.exists(refs))
         self.assertTrue(await self.redis.exists(state))
         await asyncio.gather(
@@ -166,6 +166,58 @@ class GameVictoriesIntegrationTests(unittest.IsolatedAsyncioTestCase):
         for user, session_id in ((first, first_session), (second, second_session)):
             _, placements = await self.segments.crossword(user, session_id)
             self.assertEqual(placements[0].word_text, "Station")
+
+    async def test_new_session_gets_fresh_segment_while_old_round_player_continues(self) -> None:
+        old_word = self.word()
+        first, first_session = await self.player((1, 2), old_word)
+        second = uuid4()
+        async with self.db.begin() as db:
+            db.add(User(
+                id=second, username=f"user-{second.hex[:12]}", email=f"{second.hex}@example.com",
+                hashed_password="test-only", score=0,
+            ))
+        old_session = await self.sessions.join(second, uuid4(), [(3, 4)])
+        await self.segments.confirm_route(
+            second, old_session.id, [10, 11],
+            {10: [self.word()], 11: [self.word()]},
+        )
+        first_state = await self.sessions.restore(first)
+        second_state = await self.sessions.restore(second)
+        assert first_state is not None and second_state is not None
+        self.assertEqual(first_state.round_id, second_state.round_id)
+        old_round = first_state.round_id
+        old_refs, old_segment = self.sessions.segment_keys(old_round, 10)
+
+        result = await self.segments.guess(first, first_session, old_word.placement_id, "station")
+        self.assertEqual(result.session.state, "finishing")
+        self.assertEqual((await self.sessions.restore(second)).state, "playing")
+        await self.victories.finish(first, first_session)
+        self.assertEqual(await self.redis.scard(old_refs), 1)
+        self.assertEqual((await self.sessions.restore(second)).round_id, old_round)
+
+        replacement = await self.sessions.join(first, uuid4(), [(1, 2)])
+        self.assertNotEqual(replacement.round_id, old_round)
+        fresh_word = WordProposal(
+            placement_id=uuid4(), dictionary_word_id=1,
+            word_text="Platform", definition="New railway stop", offset_px=18,
+        )
+        await self.segments.confirm_route(first, replacement.id, [10], {10: [fresh_word]})
+        fresh_refs, fresh_segment = self.sessions.segment_keys(replacement.round_id, 10)
+        self.assertNotEqual((old_refs, old_segment), (fresh_refs, fresh_segment))
+        self.assertEqual(await self.redis.scard(old_refs), 1)
+        self.assertEqual(await self.redis.scard(fresh_refs), 1)
+
+        _, old_crossword = await self.segments.crossword(second, old_session.id)
+        _, new_crossword = await self.segments.crossword(first, replacement.id)
+        self.assertEqual(old_crossword[0].placement_id, old_word.placement_id)
+        self.assertTrue(old_crossword[0].is_guessed)
+        self.assertEqual(old_crossword[0].word_text, old_word.word_text)
+        self.assertEqual(new_crossword[0].placement_id, fresh_word.placement_id)
+        self.assertFalse(new_crossword[0].is_guessed)
+
+        await self.sessions.surrender(second, old_session.id, uuid4())
+        self.assertEqual(await self.redis.exists(old_refs, old_segment), 0)
+        self.assertEqual(await self.redis.exists(fresh_refs, fresh_segment), 2)
 
     async def test_negative_snapshot_score_is_clamped_before_commit(self) -> None:
         user, session_id = await self.finishing_player()

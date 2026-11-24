@@ -41,7 +41,8 @@ if session_type ~= "hash" then return {"corrupt"} end
 if redis.call("HGET", KEYS[2], "id") ~= ARGV[1] then return {"not_found"} end
 if redis.call("HGET", KEYS[2], "user_id") ~= ARGV[2]
    or redis.call("HGET", KEYS[2], "route_ids") ~= ARGV[3]
-   or redis.call("HGET", KEYS[2], "victory_snapshot") ~= ARGV[4] then return {"corrupt"} end
+   or redis.call("HGET", KEYS[2], "victory_snapshot") ~= ARGV[4]
+   or redis.call("HGET", KEYS[2], "round_id") ~= ARGV[7] then return {"corrupt"} end
 local state = redis.call("HGET", KEYS[2], "state")
 if state == "won" then return {"ok", redis.call("HGETALL", KEYS[2])} end
 if state ~= "finishing" or redis.call("HGET", KEYS[2], "state_version") ~= ARGV[5] then
@@ -57,6 +58,7 @@ for i = 5, #KEYS, 2 do
     if redis.call("TYPE", KEYS[i]).ok ~= "set"
        or redis.call("TYPE", KEYS[i + 1]).ok ~= "hash"
        or redis.call("SISMEMBER", KEYS[i], ARGV[1]) ~= 1
+       or redis.call("HGET", KEYS[i + 1], "round_id") ~= ARGV[7]
        or redis.call("HGET", KEYS[i + 1], "owner:" .. ARGV[1]) ~= ARGV[2] then
         return {"corrupt"}
     end
@@ -145,12 +147,12 @@ class GameVictories:
             self.sessions.session_key(user_id), self.sessions.city_pairs_key(), self.queue_key
         ]
         for route_id in session.route_ids:
-            keys.extend(self.sessions.segment_keys(route_id))
+            keys.extend(self.sessions.segment_keys(session.round_id, route_id))
         pair = f"{min(session.source_city_id, session.target_city_id)}:{max(session.source_city_id, session.target_city_id)}"
         result = await self.generation.execute(
             _PUBLISH, keys=keys,
             args=[str(session_id), str(user_id), routes_json, snapshot_json,
-                  str(session.state_version), pair],
+                  str(session.state_version), pair, str(session.round_id)],
         )
         if not isinstance(result, list) or not result:
             raise SessionStorageError("Invalid victory publication response.")

@@ -117,7 +117,7 @@ class SharedWordRedisTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(retried.state_version, one.state_version)
         with self.assertRaises(RouteAlreadyConfirmed):
             await self.game.confirm_route(user1, first.id, [8], {})
-        refs, state = self.sessions.segment_keys(7)
+        refs, state = self.sessions.segment_keys(first.round_id, 7)
         await self.sessions.surrender(user1, first.id, uuid4())
         self.assertEqual(await self.redis.exists(refs, state), 2)
         owner = await self.generation.execute(
@@ -302,7 +302,7 @@ class SharedWordRedisTests(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaises(SessionStorageError):
             await self.game.confirm_route(user, session.id, [7], {7: [proposal("cat")]})
-        refs, state = self.sessions.segment_keys(7)
+        refs, state = self.sessions.segment_keys(session.round_id, 7)
         self.assertEqual(await self.redis.exists(refs, state), 0)
         result = await self.generation.execute(
             "return redis.call('HGET', KEYS[2], 'state')", keys=[self.sessions.session_key(user)]

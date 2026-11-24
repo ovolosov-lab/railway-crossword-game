@@ -152,27 +152,72 @@ class GameSessionsRedisTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(JoinResultUnavailable):
             await self.sessions.join(user, join_key, [(3, 4)])
 
+    async def test_current_round_rotates_once_for_winners_from_the_previous_round(self) -> None:
+        first_user, second_user = uuid4(), uuid4()
+        first = await self.sessions.join(first_user, uuid4(), [(1, 2)])
+        second = await self.sessions.join(second_user, uuid4(), [(3, 4)])
+        self.assertEqual(first.round_id, second.round_id)
+        old_round = first.round_id
+
+        for user, session in ((first_user, first), (second_user, second)):
+            pair = f"{min(session.source_city_id, session.target_city_id)}:{max(session.source_city_id, session.target_city_id)}"
+            await self.generation.execute(
+                "redis.call('HDEL', KEYS[3], ARGV[2]); "
+                "return redis.call('HSET', KEYS[2], 'state', 'won', 'route_ids', '[7]', "
+                "'victory_snapshot', '{}')",
+                keys=[self.sessions.session_key(user), self.sessions.city_pairs_key()],
+                args=[str(session.id), pair],
+            )
+
+        first_next = await self.sessions.join(first_user, uuid4(), [(1, 2)])
+        self.assertNotEqual(first_next.round_id, old_round)
+        second_next = await self.sessions.join(second_user, uuid4(), [(3, 4)])
+        self.assertEqual(second_next.round_id, first_next.round_id)
+        self.assertEqual(await self.redis.get(self.sessions.current_round_key()), str(first_next.round_id))
+        self.assertEqual(second_next.route_ids, [])
+        self.assertIsNone(second_next.victory_snapshot)
+
+    async def test_failed_join_after_win_does_not_change_current_round_or_snapshot(self) -> None:
+        winner, blocker = uuid4(), uuid4()
+        won = await self.sessions.join(winner, uuid4(), [(1, 2)])
+        await self.generation.execute(
+            "redis.call('HDEL', KEYS[3], '1:2'); "
+            "return redis.call('HSET', KEYS[2], 'state', 'won', 'route_ids', '[7]', "
+            "'victory_snapshot', '{\"preserved\":true}')",
+            keys=[self.sessions.session_key(winner), self.sessions.city_pairs_key()],
+        )
+        await self.sessions.join(blocker, uuid4(), [(3, 4)])
+        current_round = await self.redis.get(self.sessions.current_round_key())
+        with self.assertRaises(NoAvailableCityPair):
+            await self.sessions.join(winner, uuid4(), [(3, 4)])
+        restored = await self.sessions.restore(winner)
+        self.assertEqual(restored.id, won.id)
+        self.assertEqual(restored.state, "won")
+        self.assertEqual(restored.victory_snapshot, {"preserved": True})
+        self.assertEqual(await self.redis.get(self.sessions.current_round_key()), current_round)
+
     async def test_playing_surrender_releases_shared_segment_only_after_last_user(self) -> None:
         users = [uuid4(), uuid4()]
         first = await self.sessions.join(users[0], uuid4(), [(1, 2)])
         second = await self.sessions.join(users[1], uuid4(), [(3, 4)])
-        refs, state = self.sessions.segment_keys(7)
+        refs, state = self.sessions.segment_keys(first.round_id, 7)
         for user, session in zip(users, (first, second)):
             await self.generation.execute(
                 "redis.call('SADD', KEYS[3], ARGV[1]); "
-                "redis.call('SET', KEYS[4], 'shared'); "
+                "redis.call('HSET', KEYS[4], 'round_id', ARGV[2], 'value', 'shared', "
+                "'owner:' .. ARGV[1], ARGV[3]); "
                 "return redis.call('HSET', KEYS[2], 'state', 'playing', "
                 "'route_ids', '[7]', 'hints', '{\"placement\":{\"first_letter\":\"A\"}}', "
                 "'session_score', '10', 'state_version', '2')",
                 keys=[self.sessions.session_key(user), refs, state],
-                args=[str(session.id)],
+                args=[str(session.id), str(session.round_id), str(user)],
             )
         restored = await self.sessions.restore(users[0])
         assert restored is not None
         self.assertEqual(restored.hints["placement"]["first_letter"], "A")
         self.assertEqual(restored.session_score, 10)
         await self.sessions.surrender(users[0], first.id, uuid4())
-        self.assertEqual(await self.redis.get(state), "shared")
+        self.assertEqual(await self.redis.hget(state, "value"), "shared")
         members = await self.generation.execute(
             "return redis.call('SMEMBERS', KEYS[2])", keys=[refs]
         )
@@ -198,7 +243,7 @@ class GameSessionsRedisTests(unittest.IsolatedAsyncioTestCase):
     async def test_surrender_retries_if_route_changes_between_read_and_script(self) -> None:
         user = uuid4()
         session = await self.sessions.join(user, uuid4(), [(1, 2)])
-        refs, state = self.sessions.segment_keys(7)
+        refs, state = self.sessions.segment_keys(session.round_id, 7)
         original_read = self.sessions._read
         changed = False
 
@@ -209,11 +254,12 @@ class GameSessionsRedisTests(unittest.IsolatedAsyncioTestCase):
                 changed = True
                 await self.generation.execute(
                     "redis.call('SADD', KEYS[3], ARGV[1]); "
-                    "redis.call('SET', KEYS[4], 'shared'); "
+                    "redis.call('HSET', KEYS[4], 'round_id', ARGV[2], 'value', 'shared', "
+                    "'owner:' .. ARGV[1], ARGV[3]); "
                     "return redis.call('HSET', KEYS[2], 'state', 'playing', "
                     "'route_ids', '[7]', 'state_version', '2')",
                     keys=[self.sessions.session_key(user), refs, state],
-                    args=[str(session.id)],
+                    args=[str(session.id), str(session.round_id), str(user)],
                 )
             return result
 

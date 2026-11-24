@@ -46,9 +46,11 @@ class VictorySnapshotRedisTests(unittest.IsolatedAsyncioTestCase):
 
     async def publish_and_release(self) -> None:
         # Simulate the future publisher; task 36's database transaction is not tested here.
+        session = await self.sessions.restore(self.user)
+        assert session is not None
         async with self.redis.pipeline(transaction=True) as pipe:
             pipe.hset(self.sessions.session_key(self.user), "state", "won")
-            pipe.delete(*self.sessions.segment_keys(10))
+            pipe.delete(*self.sessions.segment_keys(session.round_id, 10))
             await pipe.execute()
 
     async def test_won_crossword_uses_snapshot_after_segment_release(self) -> None:
