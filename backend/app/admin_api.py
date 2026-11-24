@@ -83,7 +83,7 @@ async def add_dictionary_words(
     return DictionaryImportResponse(added=result.rowcount or 0) # pyright: ignore[reportAttributeAccessIssue]
 
 
-@dict_file_router.post(
+@router.post(
     "/dict_file/",
     response_model=DictionaryImportResponse,
     status_code=status.HTTP_201_CREATED,
@@ -92,7 +92,7 @@ async def add_dictionary_words(
 async def add_dictionary_words_from_file(
     filename: Annotated[str, Query(min_length=5, max_length=80)],
     language: Annotated[Literal["ru", "en"], Query()],
-    user: Annotated[User, Depends(get_current_user_from_header)],
+    user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> DictionaryImportResponse:
     if user.username != "administrator":
