@@ -30,7 +30,7 @@ export function mergeSessionSnapshot(current, incoming, { allowSessionReplacemen
 }
 
 export function wordCenterOffset(offsetPx, letterCount) {
-  return Number(offsetPx) + Number(letterCount) * 13;
+  return Number(offsetPx) + (Number(letterCount) - 1) * 13;
 }
 
 export function initialSelectedCityIds(playerState, sourceCityId) {

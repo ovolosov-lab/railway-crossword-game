@@ -79,6 +79,41 @@ class VictorySnapshotRedisTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.state, "won")
         self.assertEqual(placements[0].word_text, "Station")
 
+    async def test_crossing_geometry_survives_victory_snapshot(self) -> None:
+        user = uuid4()
+        session = await self.sessions.join(user, uuid4(), [(1, 2)])
+        crossing_id = uuid4()
+        along_id, perpendicular_id = uuid4(), uuid4()
+        await self.segments.confirm_route(
+            user,
+            session.id,
+            [11],
+            {11: [
+                WordProposal(
+                    placement_id=along_id, dictionary_word_id=1, word_text="train",
+                    definition="Rail vehicle", offset_px=90,
+                    crossing_id=crossing_id, crossing_index=2,
+                ),
+                WordProposal(
+                    placement_id=perpendicular_id, dictionary_word_id=2, word_text="plane",
+                    definition="Aircraft", offset_px=142,
+                    orientation="perpendicular", y_offset_px=-52,
+                    crossing_id=crossing_id, crossing_index=2,
+                ),
+            ]},
+        )
+        await self.segments.guess(user, session.id, along_id, "train")
+        result = await self.segments.guess(user, session.id, perpendicular_id, "plane")
+        self.assertEqual(result.session.state, "finishing")
+        await self.redis.hset(self.sessions.session_key(user), "state", "won")
+        await self.redis.delete(*self.sessions.segment_keys(session.round_id, 11))
+
+        _, placements = await self.segments.crossword(user, session.id)
+        by_id = {placement.placement_id: placement for placement in placements}
+        self.assertEqual(by_id[along_id].crossing_id, crossing_id)
+        self.assertEqual(by_id[perpendicular_id].orientation, "perpendicular")
+        self.assertEqual(by_id[perpendicular_id].y_offset_px, -52)
+
     async def test_invalid_snapshot_is_rejected(self) -> None:
         await self.publish_and_release()
         key = self.sessions.session_key(self.user)

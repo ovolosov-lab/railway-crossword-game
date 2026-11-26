@@ -1,8 +1,8 @@
 import {
   initialSelectedCityIds,
   mergeSessionSnapshot,
-  wordCenterOffset,
 } from "./session_state.js";
+import { placementCellCenters, revealedCrossingLetters } from "./crossword_layout.js";
 
 (() => {
   "use strict";
@@ -266,48 +266,59 @@ import {
 
   function drawCrossword() {
     const layer = svgElement("g", { "aria-label": t("crossword_cells") });
+    const crossingLetters = revealedCrossingLetters(snapshot.crossword);
+    const drawnCrossings = new Set();
     for (const placement of snapshot.crossword) {
       const route = routeById(placement.route_id);
       const source = route && cityById(route.source_city_id);
       const target = route && cityById(route.target_city_id);
       if (!route || !source || !target) continue;
 
-      const sourceX = Number(source.left);
-      const sourceY = Number(source.top);
-      const dx = Number(target.left) - sourceX;
-      const dy = Number(target.top) - sourceY;
-      const segmentLength = Math.hypot(dx, dy);
-      const centerDistance = wordCenterOffset(placement.offset_px, placement.letter_count);
-      if (!Number.isFinite(segmentLength) || segmentLength <= 0 || centerDistance > segmentLength) continue;
-
-      const centerX = sourceX + dx * centerDistance / segmentLength;
-      const centerY = sourceY + dy * centerDistance / segmentLength;
-      let angle = Math.atan2(dy, dx) * 180 / Math.PI;
-      if (angle > 90) angle -= 180;
-      if (angle < -90) angle += 180;
+      const centers = placementCellCenters(placement, source, target, CELL_SIZE);
+      if (centers.length !== Number(placement.letter_count)) continue;
+      const firstCell = centers[0];
+      const dx = Number(target.left) - Number(source.left);
+      const dy = Number(target.top) - Number(source.top);
+      const angle = Math.atan2(dy, dx) * 180 / Math.PI
+        + (placement.orientation === "perpendicular" ? 90 : 0);
       const canOpen = snapshot.player?.state === "playing" && !placement.is_guessed;
       const group = svgElement("g", {
         class: `crossword-word${placement.is_guessed ? " is-guessed" : ""}`,
-        transform: `translate(${centerX} ${centerY}) rotate(${angle})`,
+        transform: `translate(${firstCell.x} ${firstCell.y}) rotate(${angle})`,
         "data-placement-id": placement.placement_id,
         role: "button",
         tabindex: canOpen ? "0" : "-1",
         "aria-label": `${placement.definition}. ${placement.letter_count} ${t("crossword_area_label")}`,
         "aria-pressed": placement.is_guessed ? "true" : "false",
       });
-      const width = Number(placement.letter_count) * CELL_SIZE;
       const revealed = placement.is_guessed ? Array.from(placement.word_text || "") : [];
       for (let index = 0; index < placement.letter_count; index += 1) {
-        const x = -width / 2 + index * CELL_SIZE;
-        group.append(svgElement("rect", {
-          x, y: -CELL_SIZE / 2, width: CELL_SIZE, height: CELL_SIZE, rx: 4, class: "crossword-cell",
-        }));
-        if (revealed[index]) {
+        const x = index * CELL_SIZE - CELL_SIZE / 2;
+        const isCrossingCell = placement.crossing_id
+          && Number(placement.crossing_index) === index;
+        const crossingAlreadyDrawn = isCrossingCell && drawnCrossings.has(placement.crossing_id);
+        if (!crossingAlreadyDrawn) {
+          group.append(svgElement("rect", {
+            x, y: -CELL_SIZE / 2, width: CELL_SIZE, height: CELL_SIZE, rx: 4, class: "crossword-cell",
+          }));
+          if (isCrossingCell) drawnCrossings.add(placement.crossing_id);
+        } else {
+          // Keep the one visible square clickable for this word as well.
+          group.append(svgElement("rect", {
+            x, y: -CELL_SIZE / 2, width: CELL_SIZE, height: CELL_SIZE, rx: 4,
+            class: "crossword-cell-hit-area", fill: "transparent", stroke: "none",
+            "pointer-events": "all",
+          }));
+        }
+        const letter = isCrossingCell
+          ? crossingLetters.get(placement.crossing_id)
+          : revealed[index];
+        if (letter && !crossingAlreadyDrawn) {
           const label = svgElement("text", {
             x: x + CELL_SIZE / 2, y: -1.5, class: "crossword-cell-text",
           });
           label.style.fontSize = `${Math.min(20, CELL_SIZE * 0.8)}px`;
-          label.textContent = revealed[index];
+          label.textContent = letter;
           group.append(label);
         }
       }

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import unicodedata
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
@@ -21,6 +22,8 @@ _WHITESPACE = frozenset(
     "\u2028\u2029\u202f\u205f\u3000"
 )
 _DASHES = frozenset("-\u2010\u2011\u2012\u2013\u2014\u2015")
+CROSSWORD_CELL_SIZE_PX = 26
+WordOrientation = Literal["along", "perpendicular"]
 
 
 def normalize_answer(value: str) -> str:
@@ -36,6 +39,10 @@ class WordProposal(BaseModel):
     word_text: str = Field(min_length=1, max_length=100)
     definition: str = Field(min_length=1)
     offset_px: float = Field(ge=0, allow_inf_nan=False)
+    orientation: WordOrientation = "along"
+    y_offset_px: float = Field(default=0, allow_inf_nan=False)
+    crossing_id: UUID | None = None
+    crossing_index: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def require_letters(self) -> WordProposal:
@@ -43,6 +50,19 @@ class WordProposal(BaseModel):
             raise ValueError("A crossword word must contain a letter.")
         if not self.definition.strip():
             raise ValueError("A crossword definition must not be blank.")
+        if (self.crossing_id is None) != (self.crossing_index is None):
+            raise ValueError("Crossing ID and index must be specified together.")
+        if self.orientation == "perpendicular" and self.crossing_id is None:
+            raise ValueError("A perpendicular word must belong to a crossing pair.")
+        if self.orientation == "along" and self.y_offset_px != 0:
+            raise ValueError("An along word must lie on the route axis.")
+        if self.crossing_index is not None:
+            if not 0 < self.crossing_index < len(self.word_text) - 1:
+                raise ValueError("The crossing letter must be inside the word.")
+            if not unicodedata.category(self.word_text[self.crossing_index]).startswith("L"):
+                raise ValueError("The crossing cell must contain a letter.")
+        if self.orientation == "perpendicular" and not 3 <= len(self.word_text) <= 7:
+            raise ValueError("A perpendicular word must contain 3 to 7 cells.")
         return self
 
     def stored(self) -> dict[str, object]:
@@ -56,6 +76,10 @@ class WordProposal(BaseModel):
             "word_text": self.word_text,
             "definition": self.definition,
             "offset_px": self.offset_px,
+            "orientation": self.orientation,
+            "y_offset_px": self.y_offset_px,
+            "crossing_id": str(self.crossing_id) if self.crossing_id else None,
+            "crossing_index": self.crossing_index,
             "letter_count": len(self.word_text),
             "normalized": normalize_answer(self.word_text),
             "first_letter": letters[0],
@@ -73,6 +97,10 @@ class _StoredWord(BaseModel):
     word_text: str
     definition: str
     offset_px: float
+    orientation: WordOrientation = "along"
+    y_offset_px: float = Field(default=0, allow_inf_nan=False)
+    crossing_id: UUID | None = None
+    crossing_index: int | None = Field(default=None, ge=0)
     letter_count: int
     normalized: str
     first_letter: str
@@ -95,10 +123,49 @@ class _StoredWord(BaseModel):
             or self.first_letter != letters[0]
             or self.last_letter != letters[-1]
             or self.points != len(letters) * 10
-            or not 0 <= self.offset_px < float("inf")
+            or not math.isfinite(self.offset_px)
+            or self.offset_px < 0
+            or not math.isfinite(self.y_offset_px)
+            or (self.crossing_id is None) != (self.crossing_index is None)
+            or (self.orientation == "perpendicular" and self.crossing_id is None)
+            or (self.orientation == "along" and self.y_offset_px != 0)
+            or (
+                self.crossing_index is not None
+                and not 0 < self.crossing_index < self.letter_count - 1
+            )
+            or (
+                self.crossing_index is not None
+                and not unicodedata.category(self.word_text[self.crossing_index]).startswith("L")
+            )
+            or (self.orientation == "perpendicular" and not 3 <= self.letter_count <= 7)
         ):
             raise ValueError("Invalid stored crossword word.")
         return self
+
+
+def _validate_crossing_pairs(words: Sequence[_StoredWord | WordProposal]) -> None:
+    pairs: dict[UUID, list[_StoredWord | WordProposal]] = {}
+    for word in words:
+        if word.crossing_id is not None:
+            pairs.setdefault(word.crossing_id, []).append(word)
+    for pair_id, pair in pairs.items():
+        if len(pair) != 2:
+            raise ValueError(f"Crossing {pair_id} must contain exactly two words.")
+        along = [word for word in pair if word.orientation == "along"]
+        perpendicular = [word for word in pair if word.orientation == "perpendicular"]
+        if len(along) != 1 or len(perpendicular) != 1:
+            raise ValueError(f"Crossing {pair_id} must contain one word in each orientation.")
+        first, second = along[0], perpendicular[0]
+        first_index = first.crossing_index
+        second_index = second.crossing_index
+        assert first_index is not None and second_index is not None
+        if normalize_answer(first.word_text[first_index]) != normalize_answer(second.word_text[second_index]):
+            raise ValueError(f"Crossing {pair_id} letters do not match.")
+        expected_x = first.offset_px + first_index * CROSSWORD_CELL_SIZE_PX
+        actual_x = second.offset_px
+        actual_y = second.y_offset_px + second_index * CROSSWORD_CELL_SIZE_PX
+        if not math.isclose(expected_x, actual_x, abs_tol=1e-6) or not math.isclose(actual_y, 0, abs_tol=1e-6):
+            raise ValueError(f"Crossing {pair_id} cells do not share coordinates.")
 
 
 class _SnapshotSegment(BaseModel):
@@ -106,6 +173,11 @@ class _SnapshotSegment(BaseModel):
 
     route_id: int
     words: list[_StoredWord]
+
+    @model_validator(mode="after")
+    def validate_crossings(self) -> _SnapshotSegment:
+        _validate_crossing_pairs(self.words)
+        return self
 
 
 class VictorySnapshot(BaseModel):
@@ -161,6 +233,10 @@ class Placement(BaseModel):
     placement_id: UUID
     route_id: int
     offset_px: float
+    orientation: WordOrientation = "along"
+    y_offset_px: float = 0
+    crossing_id: UUID | None = None
+    crossing_index: int | None = None
     letter_count: int
     definition: str
     is_guessed: bool
@@ -561,6 +637,7 @@ class GameSegments:
                 if word.placement_id in seen:
                     raise ValueError("Placement IDs must be unique within the route.")
                 seen.add(word.placement_id)
+            _validate_crossing_pairs(words)
             encoded_proposals.append(json.dumps(
                 [word.stored() for word in words], ensure_ascii=False, separators=(",", ":")
             ))
@@ -611,8 +688,10 @@ class GameSegments:
         try:
             for route_id, encoded in zip(routes, result[1]):
                 if encoded is not None:
-                    published[route_id] = _WORD_LIST.validate_json(encoded)
-        except ValidationError as exc:
+                    words = _WORD_LIST.validate_json(encoded)
+                    _validate_crossing_pairs(words)
+                    published[route_id] = words
+        except (ValidationError, ValueError) as exc:
             raise SessionStorageError("Invalid shared segment data.") from exc
         return published
 
@@ -652,6 +731,7 @@ class GameSegments:
                     if not isinstance(item, list) or len(item) != 2 or not isinstance(item[1], list):
                         raise ValueError("Invalid shared segment response.")
                     words = _WORD_LIST.validate_json(item[0])
+                    _validate_crossing_pairs(words)
                     owners_list = item[1]
                     if len(owners_list) % 2:
                         raise ValueError("Invalid segment owners.")
@@ -685,6 +765,10 @@ class GameSegments:
                 placement_id=word.placement_id,
                 route_id=segment.route_id,
                 offset_px=word.offset_px,
+                orientation=word.orientation,
+                y_offset_px=word.y_offset_px,
+                crossing_id=word.crossing_id,
+                crossing_index=word.crossing_index,
                 letter_count=word.letter_count,
                 definition=word.definition,
                 is_guessed=word.solved_by is not None,

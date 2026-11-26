@@ -5,6 +5,10 @@ import {
   mergeSessionSnapshot,
   wordCenterOffset,
 } from "../static/session_state.js";
+import {
+  placementCellCenters,
+  revealedCrossingLetters,
+} from "../static/crossword_layout.js";
 
 const snapshot = (id, version, playerState = "playing", status = "active") => ({
   session: { id, state_version: version, status },
@@ -34,7 +38,30 @@ test("allows the explicit new-game response to replace the previous session", ()
 });
 
 test("positions the word center from the server pixel offset and 26px cells", () => {
-  assert.equal(wordCenterOffset(52, 6), 130);
+  assert.equal(wordCenterOffset(52, 6), 117);
+});
+
+test("places perpendicular letters along the local y axis through their crossing", () => {
+  const centers = placementCellCenters({
+    orientation: "perpendicular",
+    offset_px: 52,
+    y_offset_px: -26,
+    letter_count: 3,
+  }, { left: 0, top: 0 }, { left: 100, top: 0 });
+  assert.deepEqual(centers, [
+    { x: 52, y: -26 },
+    { x: 52, y: 0 },
+    { x: 52, y: 26 },
+  ]);
+});
+
+test("reveals only the shared letter when either crossing word is solved", () => {
+  const letters = revealedCrossingLetters([
+    { crossing_id: "cross-1", crossing_index: 2, is_guessed: false },
+    { crossing_id: "cross-1", crossing_index: 1, is_guessed: true, word_text: "train" },
+    { crossing_id: "cross-2", crossing_index: 1, is_guessed: false },
+  ]);
+  assert.deepEqual([...letters], [["cross-1", "r"]]);
 });
 
 test("starts manual route selection from the assigned source city", () => {

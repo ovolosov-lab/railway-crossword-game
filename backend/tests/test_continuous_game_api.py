@@ -293,21 +293,28 @@ class ContinuousGameApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(crossword), 3)
         for placement in crossword:
             self.assertEqual(set(placement), {
-                "placement_id", "route_id", "offset_px", "letter_count", "definition",
+                "placement_id", "route_id", "offset_px", "orientation", "y_offset_px",
+                "crossing_id", "crossing_index", "letter_count", "definition",
                 "is_guessed", "guessed_by_me", "hint_types_used", "hints",
             })
             self.assertFalse(placement["is_guessed"])
             self.assertEqual(placement["hints"], [])
-            self.assertGreaterEqual(placement["offset_px"], 26)
+            self.assertGreaterEqual(placement["offset_px"], 0)
         by_route = {}
         for placement in crossword:
             by_route.setdefault(placement["route_id"], []).append(placement)
         for route_id, limit in ((3, 234), (4, 520)):
             for placement in by_route[route_id]:
-                self.assertLessEqual(
-                    placement["offset_px"] + placement["letter_count"] * 26,
-                    limit - 26,
-                )
+                if placement["orientation"] == "along":
+                    self.assertGreaterEqual(placement["offset_px"] - 13, 26)
+                    self.assertLessEqual(
+                        placement["offset_px"] + (placement["letter_count"] - 1) * 26 + 13,
+                        limit - 26,
+                    )
+                else:
+                    self.assertIsNotNone(placement["crossing_id"])
+                    self.assertGreaterEqual(placement["crossing_index"], 1)
+                    self.assertLess(placement["crossing_index"], placement["letter_count"] - 1)
         words = [word_of(item) for item in crossword]
         self.assertEqual(len(words), len(set(words)))
         again = await self.confirm(user, session_id, [3, 4])
@@ -597,6 +604,76 @@ class ContinuousGameApiTests(unittest.IsolatedAsyncioTestCase):
             last = await self.guess(first, first_id, placement)
         self.assertEqual(last.json()["session"]["status"], "finished")
         self.assertEqual((await self.score_and_results(first))[1], 1)
+
+    async def test_crossing_geometry_is_shared_through_sync_and_victory_snapshot(self) -> None:
+        first = await self.player()
+        first_join = await self.join(first, FIRST_PAIR)
+        first_id = first_join["session"]["id"]
+        crossing_id = uuid4()
+        along = WordProposal(
+            placement_id=uuid4(), dictionary_word_id=WORDS.index("train") + 1,
+            word_text="train", definition=DEFINITION_OF["train"], offset_px=90,
+            crossing_id=crossing_id, crossing_index=2,
+        )
+        perpendicular = WordProposal(
+            placement_id=uuid4(), dictionary_word_id=WORDS.index("plane") + 1,
+            word_text="plane", definition=DEFINITION_OF["plane"], offset_px=142,
+            orientation="perpendicular", y_offset_px=-52,
+            crossing_id=crossing_id, crossing_index=2,
+        )
+        endpoint = WordProposal(
+            placement_id=uuid4(), dictionary_word_id=WORDS.index("rail") + 1,
+            word_text="rail", definition=DEFINITION_OF["rail"], offset_px=280,
+        )
+        # Force a deterministic layout on the first publication; later participants
+        # read the immutable segment from Redis.
+        with patch(
+            "app.continuous_game_api._build_proposals",
+            new=AsyncMock(return_value={
+                3: [WordProposal(
+                    placement_id=uuid4(), dictionary_word_id=WORDS.index("cat") + 1,
+                    word_text="cat", definition=DEFINITION_OF["cat"], offset_px=26,
+                )],
+                4: [along, perpendicular, endpoint],
+            }),
+        ):
+            first_route = await self.confirm(first, first_id, [3, 4])
+        self.assertEqual(first_route.status_code, 200, first_route.text)
+        first_shared = [
+            placement for placement in first_route.json()["crossword"]
+            if placement["route_id"] == 4
+        ]
+        pair = [item for item in first_shared if item["crossing_id"] == str(crossing_id)]
+        self.assertEqual(len(pair), 2)
+        self.assertEqual({item["orientation"] for item in pair}, {"along", "perpendicular"})
+        self.assertTrue(all("word_text" not in item for item in first_shared))
+
+        second = await self.player()
+        second_join = await self.join(second, [(3, 4)])
+        second_id = second_join["session"]["id"]
+        second_route = await self.confirm(second, second_id, [4])
+        self.assertEqual(second_route.status_code, 200, second_route.text)
+        shared = second_route.json()["crossword"]
+        self.assertEqual(shared, first_shared)
+        sync = (await self.call(second, "GET", f"/sync/?session_id={second_id}")).json()
+        self.assertEqual(sync["crossword"], shared)
+
+        for placement in shared:
+            self.assertEqual((await self.guess(second, second_id, placement)).status_code, 200)
+        snapshot = (await self.call(second, "GET", f"/sync/?session_id={second_id}")).json()
+        self.assertEqual(snapshot["player"]["state"], "won")
+        self.assertEqual(
+            [
+                (item["placement_id"], item["orientation"], item["offset_px"],
+                 item["y_offset_px"], item["crossing_id"], item["crossing_index"])
+                for item in snapshot["crossword"]
+            ],
+            [
+                (item["placement_id"], item["orientation"], item["offset_px"],
+                 item["y_offset_px"], item["crossing_id"], item["crossing_index"])
+                for item in shared
+            ],
+        )
 
     async def test_same_route_is_shared_within_round_but_isolated_after_new_session(self) -> None:
         first, second = await self.player(), await self.player()

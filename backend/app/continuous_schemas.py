@@ -25,6 +25,7 @@ SessionPlayerState = Literal[
     "watching_stats", "selecting_route", "playing", "finishing", "won"
 ]
 HintResultType = Literal["first_letter", "last_letter", "unknown"]
+WordOrientation = Literal["along", "perpendicular"]
 
 
 class SessionProjection(Schema):
@@ -66,6 +67,10 @@ class CrosswordPlacement(Schema):
     placement_id: UUID
     route_id: PositiveId
     offset_px: Annotated[float, Field(ge=0, allow_inf_nan=False)]
+    orientation: WordOrientation = "along"
+    y_offset_px: float = Field(default=0, allow_inf_nan=False)
+    crossing_id: UUID | None = None
+    crossing_index: int | None = Field(default=None, ge=0)
     letter_count: PositiveId
     definition: str
     is_guessed: bool
@@ -78,6 +83,16 @@ class CrosswordPlacement(Schema):
     def only_reveal_solved_words(self) -> CrosswordPlacement:
         if self.word_text is not None and not self.is_guessed:
             raise ValueError("An unsolved placement must not reveal its word.")
+        if (self.crossing_id is None) != (self.crossing_index is None):
+            raise ValueError("Crossing ID and index must be set together.")
+        if self.orientation == "perpendicular" and self.crossing_id is None:
+            raise ValueError("A perpendicular word must belong to a crossing pair.")
+        if self.orientation == "along" and self.y_offset_px != 0:
+            raise ValueError("An along word must lie on the route axis.")
+        if self.crossing_index is not None and not 0 < self.crossing_index < self.letter_count - 1:
+            raise ValueError("The crossing cell must be inside the word.")
+        if self.orientation == "perpendicular" and not 3 <= self.letter_count <= 7:
+            raise ValueError("A perpendicular word must contain 3 to 7 cells.")
         return self
 
 

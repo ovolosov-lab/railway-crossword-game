@@ -47,6 +47,7 @@ from app.continuous_schemas import (
     SyncResponse,
 )
 from app.crossword_generator import (
+    CROSSING_WORD_MAX_CELLS,
     CrosswordGenerationError,
     SegmentSpec,
     WordCandidate,
@@ -223,6 +224,10 @@ def _placement_response(placement: Placement) -> CrosswordPlacement:
         "placement_id": placement.placement_id,
         "route_id": placement.route_id,
         "offset_px": placement.offset_px,
+        "orientation": placement.orientation,
+        "y_offset_px": placement.y_offset_px,
+        "crossing_id": placement.crossing_id,
+        "crossing_index": placement.crossing_index,
         "letter_count": placement.letter_count,
         "definition": placement.definition,
         "is_guessed": placement.is_guessed,
@@ -485,7 +490,7 @@ async def _build_proposals(
     new_routes = [route for route in routes if route.id not in published]
     if not new_routes:
         return {}
-    city_ids = {city_id for route in new_routes for city_id in (route.source_city_id, route.target_city_id)}
+    city_ids = {city_id for route in routes for city_id in (route.source_city_id, route.target_city_id)}
     city_rows = await db.execute(
         select(City.id, City.left, City.top).where(
             City.lang == settings.language, City.id.in_(city_ids)
@@ -496,7 +501,9 @@ async def _build_proposals(
         logger.critical("Map coordinates are missing for cities {}", sorted(city_ids - coordinates.keys()))
         raise CrosswordGenerationError("Map coordinates are missing.")
     candidates = await _load_candidates(
-        db, settings.language, max(route.length_in_letters for route in new_routes)
+        db,
+        settings.language,
+        max(CROSSING_WORD_MAX_CELLS, max(route.length_in_letters for route in new_routes)),
     )
     specs = [
         SegmentSpec.from_cities(
@@ -505,11 +512,16 @@ async def _build_proposals(
             coordinates[route.source_city_id],
             coordinates[route.target_city_id],
         )
-        for route in new_routes
+        for route in routes
     ]
     occupied = [word.word_text for words in published.values() for word in words]
     return await asyncio.to_thread(
-        generate_segment_proposals, specs, candidates, occupied_words=occupied
+        generate_segment_proposals,
+        [spec for spec in specs if spec.route_id not in published],
+        candidates,
+        occupied_words=occupied,
+        route_segments=specs,
+        published_placements=published,
     )
 
 

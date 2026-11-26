@@ -187,7 +187,7 @@ class LoginPageTests(unittest.TestCase):
         self.assertIn("app.dataset.syncInterval", script.text)
         self.assertIn("Number(source.left)", script.text)
         self.assertIn("Number(target.left)", script.text)
-        self.assertIn("wordCenterOffset(placement.offset_px, placement.letter_count)", script.text)
+        self.assertIn("placementCellCenters(placement, source, target, CELL_SIZE)", script.text)
         self.assertEqual(stylesheet.status_code, 200)
         self.assertIn(".session-summary", stylesheet.text)
         self.assertIn(".map-scroll", stylesheet.text)
