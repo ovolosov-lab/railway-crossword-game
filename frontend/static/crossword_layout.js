@@ -26,6 +26,23 @@ export function placementCellCenters(placement, source, target, cellSize = 26) {
   }));
 }
 
+export function placementDisplayTransform(placement, centers, source, target) {
+  const dx = Number(target?.left) - Number(source?.left);
+  const dy = Number(target?.top) - Number(source?.top);
+  // Keep crossing indices fixed; only uncrossed along words can be reversed safely.
+  const orientAlongFromLeft = placement?.orientation === "along"
+    && !placement.crossing_id
+    && dx < 0;
+  const angle = Math.atan2(dy, dx) * 180 / Math.PI
+    + (placement?.orientation === "perpendicular" ? 90 : 0)
+    + (orientAlongFromLeft ? 180 : 0);
+
+  return {
+    origin: orientAlongFromLeft ? centers.at(-1) : centers[0],
+    angle,
+  };
+}
+
 export function revealedCrossingLetters(placements) {
   const letters = new Map();
   for (const placement of placements || []) {

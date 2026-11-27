@@ -27,7 +27,7 @@ CROSSING_WORD_MIN_CELLS = 3
 CROSSING_WORD_MAX_CELLS = 7
 CROSSING_MIN_ANGLE_DEGREES = 80
 CROSSING_MAX_PAIRS_SHORT = 1
-CROSSING_MAX_PAIRS_LONG = 2
+CROSSING_MAX_PAIRS_LONG = 3
 SMALL_SEGMENT_MAX_CELLS = 31
 SMALL_SEGMENT_FREE_TARGET_PX = 52
 LARGE_SEGMENT_FREE_TARGET_PX = 78
@@ -198,14 +198,27 @@ def _longer_replacement(
     return [*kept, rng.choice(options)]
 
 
-def _score(words: Sequence[WordCandidate], spec: SegmentSpec) -> tuple[bool, int, int]:
+def _score(
+    words: Sequence[WordCandidate],
+    spec: SegmentSpec,
+    *,
+    penalize_two_letter_words: bool,
+) -> tuple[bool, int, int, int]:
     # City clearances are outside the placement area and must not count toward
     # the ADR's free-space target for the usable segment.
     free = spec.word_area_px - _width(words)
-    short_words = sum(
-        1 for word in words if word.letters <= SHORT_WORD_MAX_LETTERS
+    one_letter_words = sum(1 for word in words if word.letters == 1)
+    two_letter_words = (
+        sum(1 for word in words if word.letters == 2)
+        if penalize_two_letter_words
+        else 0
     )
-    return free > spec.free_space_target_px, short_words, free
+    return (
+        free > spec.free_space_target_px,
+        one_letter_words,
+        two_letter_words,
+        free,
+    )
 
 
 def _place(
@@ -374,91 +387,172 @@ def _proposal_from_published(word: PublishedWord) -> WordProposal:
     )
 
 
+def maximum_crossing_pairs(words: Sequence[WordProposal]) -> int:
+    """Return the existing per-segment ceiling for optional crossing pairs."""
+    middle_words = words[1:-1]
+    if len(words) >= 3 and any(
+        len(word.word_text) >= CROSSING_WORD_MIN_CELLS for word in middle_words
+    ):
+        return CROSSING_MAX_PAIRS_LONG
+    return CROSSING_MAX_PAIRS_SHORT
+
+
+def eligible_perpendicular_candidates(
+    spec: SegmentSpec,
+    route: Sequence[SegmentSpec],
+    aligned_words: Sequence[WordProposal],
+    published: Mapping[int, Sequence[PublishedWord]],
+    prior_crossings: Sequence[WordProposal],
+    anchor_index: int,
+    anchor_letter_index: int,
+    required_letter: str,
+    required_length: int,
+    candidates: Sequence[WordCandidate],
+    used_words: Iterable[str],
+) -> list[tuple[WordCandidate, tuple[int, ...]]]:
+    """Filter one DB result set to unique candidates with free crossing geometry."""
+    if not 0 <= anchor_index < len(aligned_words):
+        return []
+    anchor = aligned_words[anchor_index]
+    required = normalize_answer(required_letter)
+    used = {normalize_answer(word) for word in used_words}
+    seen: set[str] = set()
+    eligible: list[tuple[WordCandidate, tuple[int, ...]]] = []
+
+    for candidate in candidates:
+        if candidate.cells != required_length or candidate.key in used or candidate.key in seen:
+            continue
+        seen.add(candidate.key)
+        positions: list[int] = []
+        for candidate_letter_index in range(1, len(candidate.word_text) - 1):
+            if normalize_answer(candidate.word_text[candidate_letter_index]) != required:
+                continue
+            probe = WordProposal(
+                placement_id=UUID(int=0),
+                dictionary_word_id=candidate.id,
+                word_text=candidate.word_text,
+                definition=candidate.definition,
+                offset_px=anchor.offset_px + anchor_letter_index * CELL_WIDTH_PX,
+                orientation="perpendicular",
+                y_offset_px=-candidate_letter_index * CELL_WIDTH_PX,
+                crossing_id=UUID(int=0),
+                crossing_index=candidate_letter_index,
+            )
+            if _crossing_geometry_is_clear(
+                spec,
+                route,
+                aligned_words,
+                published,
+                prior_crossings,
+                anchor_index,
+                anchor_letter_index,
+                candidate_letter_index,
+                probe,
+            ):
+                positions.append(candidate_letter_index)
+        if positions:
+            eligible.append((candidate, tuple(positions)))
+    return eligible
+
+
+def link_crossing_pair(
+    anchor: WordProposal,
+    candidate: WordCandidate,
+    anchor_letter_index: int,
+    candidate_letter_index: int,
+    rng: random.Random,
+) -> tuple[WordProposal, WordProposal]:
+    """Add the shared crossing identifier and create the perpendicular word."""
+    crossing_id = UUID(int=rng.getrandbits(128), version=4)
+    paired_anchor = WordProposal.model_validate({
+        **anchor.model_dump(),
+        "crossing_id": crossing_id,
+        "crossing_index": anchor_letter_index,
+    })
+    perpendicular = WordProposal(
+        placement_id=UUID(int=rng.getrandbits(128), version=4),
+        dictionary_word_id=candidate.id,
+        word_text=candidate.word_text,
+        definition=candidate.definition,
+        offset_px=anchor.offset_px + anchor_letter_index * CELL_WIDTH_PX,
+        orientation="perpendicular",
+        y_offset_px=-candidate_letter_index * CELL_WIDTH_PX,
+        crossing_id=crossing_id,
+        crossing_index=candidate_letter_index,
+    )
+    return paired_anchor, perpendicular
+
+
 def _apply_optional_crossings(
     spec: SegmentSpec,
     route: Sequence[SegmentSpec],
-    words: Sequence[WordCandidate],
+    words: Sequence[WordProposal],
     published: Mapping[int, Sequence[PublishedWord]],
+    crossing_candidates: Sequence[WordCandidate],
+    used_words: Iterable[str],
     rng: random.Random,
 ) -> list[WordProposal]:
     if not words:
         return []
-    if not _neighbor_angle_allows(spec, route):
-        return _place(words, spec, rng)
-    middle_candidates = words[1:-1]
-    max_pairs = CROSSING_MAX_PAIRS_LONG if any(
-        len(word.word_text) >= CROSSING_WORD_MIN_CELLS for word in middle_candidates
-    ) and len(words) >= 3 else CROSSING_MAX_PAIRS_SHORT
-    if max_pairs == 0:
-        return _place(words, spec, rng)
+    aligned = list(words)
+    if not crossing_candidates or not _neighbor_angle_allows(spec, route):
+        return aligned
 
-    rejected_candidates: set[int] = set()
-    for _ in range(len(words) + 1):
-        pairs: list[tuple[int, int, int, int]] = []
-        index = 0
-        while index + 1 < len(words) and len(pairs) < max_pairs:
-            candidate_index = index + 1
-            anchor, candidate = words[index], words[candidate_index]
-            if (
-                candidate_index == len(words) - 1
-                or candidate_index in rejected_candidates
-                or not CROSSING_WORD_MIN_CELLS
-                <= len(candidate.word_text)
-                <= CROSSING_WORD_MAX_CELLS
-            ):
-                index += 1
-                continue
-            match = _first_internal_match(anchor.word_text, candidate.word_text)
-            if match is None:
-                index += 1
-                continue
-            pairs.append((index, candidate_index, match[0], match[1]))
-            index += 2
-
-        candidate_indices = {candidate_index for _, candidate_index, _, _ in pairs}
-        aligned_indices = [index for index in range(len(words)) if index not in candidate_indices]
-        aligned_candidates = [words[index] for index in aligned_indices]
-        aligned_proposals = _place(aligned_candidates, spec, rng)
-        proposal_by_original = dict(zip(aligned_indices, aligned_proposals))
-        accepted_crossings: list[WordProposal] = []
-        failure: int | None = None
-
-        for anchor_index, candidate_index, anchor_letter, candidate_letter in pairs:
-            anchor = proposal_by_original[anchor_index]
-            candidate_word = words[candidate_index]
-            crossing_id = UUID(int=rng.getrandbits(128), version=4)
-            paired_anchor = WordProposal.model_validate({
-                **anchor.model_dump(), "crossing_id": crossing_id,
-                "crossing_index": anchor_letter,
-            })
-            perpendicular = WordProposal(
-                placement_id=UUID(int=rng.getrandbits(128), version=4),
-                dictionary_word_id=candidate_word.id,
-                word_text=candidate_word.word_text,
-                definition=candidate_word.definition,
-                offset_px=anchor.offset_px + anchor_letter * CELL_WIDTH_PX,
-                orientation="perpendicular",
-                y_offset_px=-candidate_letter * CELL_WIDTH_PX,
-                crossing_id=crossing_id,
-                crossing_index=candidate_letter,
-            )
-            if not _crossing_geometry_is_clear(
-                spec, route, aligned_proposals, published, accepted_crossings,
-                aligned_indices.index(anchor_index), anchor_letter,
-                candidate_letter, perpendicular,
-            ):
-                failure = candidate_index
-                break
-            proposal_by_original[anchor_index] = paired_anchor
-            proposal_by_original[candidate_index] = perpendicular
-            accepted_crossings.append(perpendicular)
-
-        if failure is not None:
-            rejected_candidates.add(failure)
+    max_pairs = maximum_crossing_pairs(aligned)
+    used = {normalize_answer(word) for word in used_words}
+    used.update(normalize_answer(word.word_text) for word in aligned)
+    extras_after_anchor: dict[int, WordProposal] = {}
+    accepted_crossings: list[WordProposal] = []
+    index = pair_count = 0
+    while index + 1 < len(aligned) and pair_count < max_pairs:
+        slot_index = index + 1
+        anchor, slot = aligned[index], aligned[slot_index]
+        slot_length = len(slot.word_text)
+        if (
+            slot_index == len(aligned) - 1
+            or not CROSSING_WORD_MIN_CELLS <= slot_length <= CROSSING_WORD_MAX_CELLS
+        ):
+            index += 1
             continue
-        return [proposal_by_original[index] for index in range(len(words))]
+        match = _first_internal_match(anchor.word_text, slot.word_text)
+        if match is None:
+            index += 1
+            continue
+        anchor_letter_index, _slot_letter_index = match
+        required_letter = anchor.word_text[anchor_letter_index]
+        options = eligible_perpendicular_candidates(
+            spec,
+            route,
+            aligned,
+            published,
+            accepted_crossings,
+            index,
+            anchor_letter_index,
+            required_letter,
+            slot_length,
+            crossing_candidates,
+            used,
+        )
+        if not options:
+            index += 1
+            continue
+        candidate, candidate_positions = rng.choice(options)
+        candidate_letter_index = rng.choice(candidate_positions)
+        aligned[index], perpendicular = link_crossing_pair(
+            anchor, candidate, anchor_letter_index, candidate_letter_index, rng
+        )
+        extras_after_anchor[index] = perpendicular
+        accepted_crossings.append(perpendicular)
+        used.add(candidate.key)
+        pair_count += 1
+        index += 2
 
-    return _place(words, spec, rng)
+    result: list[WordProposal] = []
+    for index, word in enumerate(aligned):
+        result.append(word)
+        if index in extras_after_anchor:
+            result.append(extras_after_anchor[index])
+    return result
 
 
 def _first_internal_match(anchor: str, candidate: str) -> tuple[int, int] | None:
@@ -539,16 +633,20 @@ def generate_segment_proposals(
     attempts: int = DEFAULT_ATTEMPTS,
     route_segments: Sequence[SegmentSpec] | None = None,
     published_placements: Mapping[int, Sequence[PublishedWord]] | None = None,
+    crossing_candidates: Iterable[WordCandidate] = (),
 ) -> dict[int, list[WordProposal]]:
     """Create words and offsets for new segments, in route order.
 
     ``occupied_words`` are the words already present on the other, published
     segments of the route; a word is used at most once per route. Optional
-    crossings require the complete selected path in ``route_segments``; without
-    that geometry, words stay along their segments. Segments with no fitting
-    word get an empty list. With ``attempts`` greater than one, the best of
+    crossings use only the separate ``crossing_candidates`` pool, never the
+    base pool; they require the complete selected path in ``route_segments``.
+    Without candidates or that geometry, words stay along their segments.
+    Segments with no fitting word get an empty list. With ``attempts`` greater
+    than one, the best of
     several randomized layouts is kept: first the one reaching the
-    free-space target, then the fewest one- and two-letter words, then the least
+    free-space target, then the fewest one-letter words, then (in a randomly
+    selected per-segment mode) the fewest two-letter words, then the least
     free space.
     """
     if attempts < 1:
@@ -558,23 +656,47 @@ def generate_segment_proposals(
         raise CrosswordGenerationError("A route must not repeat a segment.")
     rng = rng or random.SystemRandom()
     pool = sorted(candidates, key=lambda word: word.id)
+    crossing_pool = sorted(crossing_candidates, key=lambda word: word.id)
     if len({word.id for word in pool}) != len(pool):
         raise CrosswordGenerationError("Dictionary candidates must be unique.")
-    blocked = frozenset(normalize_answer(word) for word in occupied_words)
-    result: dict[int, list[WordProposal]] = {}
+    blocked = {normalize_answer(word) for word in occupied_words}
+    aligned_by_route: dict[int, list[WordProposal]] = {}
     for spec in segments:
+        penalize_two_letter_words = rng.random() < 0.5
         layouts = (
             _fill(spec.word_area_px, pool, blocked, rng, choose_action)
             for _ in range(attempts)
         )
-        best = min(layouts, key=lambda words: _score(words, spec))
-        blocked |= {word.key for word in best}
-        result[spec.route_id] = _apply_optional_crossings(
+        best = min(
+            layouts,
+            key=lambda words: _score(
+                words,
+                spec,
+                penalize_two_letter_words=penalize_two_letter_words,
+            ),
+        )
+        blocked.update(word.key for word in best)
+        aligned_by_route[spec.route_id] = _place(best, spec, rng)
+
+    if not crossing_pool:
+        return aligned_by_route
+
+    result: dict[int, list[WordProposal]] = {}
+    for spec in segments:
+        placed = _apply_optional_crossings(
             spec,
             route_segments or (),
-            best,
+            aligned_by_route[spec.route_id],
             published_placements or {},
+            crossing_pool,
+            blocked,
             rng,
+        )
+        result[spec.route_id] = placed
+        blocked.update(
+            normalize_answer(word.word_text)
+            for word in placed
+            if word.orientation == "perpendicular"
         )
     return result
 

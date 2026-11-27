@@ -7,6 +7,7 @@ import {
 } from "../static/session_state.js";
 import {
   placementCellCenters,
+  placementDisplayTransform,
   revealedCrossingLetters,
 } from "../static/crossword_layout.js";
 
@@ -53,6 +54,46 @@ test("places perpendicular letters along the local y axis through their crossing
     { x: 52, y: 0 },
     { x: 52, y: 26 },
   ]);
+});
+
+test("displays non-crossing along words left to right when the route points left", () => {
+  const placement = {
+    orientation: "along",
+    offset_px: 0,
+    letter_count: 3,
+  };
+  const source = { left: 100, top: 20 };
+  const target = { left: 0, top: 20 };
+  const centers = placementCellCenters(placement, source, target);
+  const { origin, angle } = placementDisplayTransform(placement, centers, source, target);
+  const displayedCenters = Array.from({ length: 3 }, (_, index) => ({
+    x: origin.x + Math.cos(angle * Math.PI / 180) * index * 26,
+    y: origin.y + Math.sin(angle * Math.PI / 180) * index * 26,
+  }));
+
+  const expectedCenters = [...centers].reverse();
+  displayedCenters.forEach((center, index) => {
+    assert.equal(center.x, expectedCenters[index].x);
+    assert.ok(Math.abs(center.y - expectedCenters[index].y) < 1e-9);
+  });
+  assert.equal(displayedCenters[0].x < displayedCenters[1].x, true);
+  assert.equal(displayedCenters[1].x < displayedCenters[2].x, true);
+});
+
+test("keeps the existing orientation and crossing position for crossing along words", () => {
+  const placement = {
+    orientation: "along",
+    offset_px: 0,
+    letter_count: 3,
+    crossing_id: "cross-1",
+  };
+  const source = { left: 100, top: 20 };
+  const target = { left: 0, top: 20 };
+  const centers = placementCellCenters(placement, source, target);
+  const { origin, angle } = placementDisplayTransform(placement, centers, source, target);
+
+  assert.deepEqual(origin, centers[0]);
+  assert.equal(angle, 180);
 });
 
 test("reveals only the shared letter when either crossing word is solved", () => {

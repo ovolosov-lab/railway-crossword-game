@@ -2,7 +2,11 @@ import {
   initialSelectedCityIds,
   mergeSessionSnapshot,
 } from "./session_state.js";
-import { placementCellCenters, revealedCrossingLetters } from "./crossword_layout.js";
+import {
+  placementCellCenters,
+  placementDisplayTransform,
+  revealedCrossingLetters,
+} from "./crossword_layout.js";
 
 (() => {
   "use strict";
@@ -276,15 +280,11 @@ import { placementCellCenters, revealedCrossingLetters } from "./crossword_layou
 
       const centers = placementCellCenters(placement, source, target, CELL_SIZE);
       if (centers.length !== Number(placement.letter_count)) continue;
-      const firstCell = centers[0];
-      const dx = Number(target.left) - Number(source.left);
-      const dy = Number(target.top) - Number(source.top);
-      const angle = Math.atan2(dy, dx) * 180 / Math.PI
-        + (placement.orientation === "perpendicular" ? 90 : 0);
+      const { origin, angle } = placementDisplayTransform(placement, centers, source, target);
       const canOpen = snapshot.player?.state === "playing" && !placement.is_guessed;
       const group = svgElement("g", {
         class: `crossword-word${placement.is_guessed ? " is-guessed" : ""}`,
-        transform: `translate(${firstCell.x} ${firstCell.y}) rotate(${angle})`,
+        transform: `translate(${origin.x} ${origin.y}) rotate(${angle})`,
         "data-placement-id": placement.placement_id,
         role: "button",
         tabindex: canOpen ? "0" : "-1",

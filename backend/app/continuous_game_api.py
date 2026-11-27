@@ -8,6 +8,7 @@ PostgreSQL by ``GameVictories`` and crosswords are laid out by
 from __future__ import annotations
 
 import asyncio
+import random
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -48,10 +49,16 @@ from app.continuous_schemas import (
 )
 from app.crossword_generator import (
     CROSSING_WORD_MAX_CELLS,
+    CROSSING_WORD_MIN_CELLS,
     CrosswordGenerationError,
     SegmentSpec,
     WordCandidate,
+    _first_internal_match,
+    _neighbor_angle_allows,
+    eligible_perpendicular_candidates,
     generate_segment_proposals,
+    link_crossing_pair,
+    maximum_crossing_pairs,
 )
 from app.database import get_db
 from app.game_generation import GameGenerationError, StaleGameGeneration
@@ -67,6 +74,7 @@ from app.game_segments import (
     RouteAlreadySolved,
     SessionNotPlaying,
     WordProposal,
+    normalize_answer,
 )
 from app.game_sessions import (
     GameSessions,
@@ -480,6 +488,117 @@ async def _load_candidates(
     return candidates
 
 
+async def _add_database_crossings(
+    db: AsyncSession,
+    language: str,
+    route_specs: Sequence[SegmentSpec],
+    new_specs: Sequence[SegmentSpec],
+    proposals: dict[int, list[WordProposal]],
+    published: dict[int, list[PublishedWord]],
+    rng: random.Random,
+) -> dict[int, list[WordProposal]]:
+    """Query one same-length dictionary candidate set for each eligible slot."""
+    used_words = {
+        normalize_answer(word.word_text)
+        for words in proposals.values()
+        for word in words
+    }
+    used_words.update(
+        normalize_answer(word.word_text)
+        for words in published.values()
+        for word in words
+    )
+
+    for spec in new_specs:
+        aligned = proposals.get(spec.route_id, [])
+        if not aligned or not _neighbor_angle_allows(spec, route_specs):
+            continue
+
+        max_pairs = maximum_crossing_pairs(aligned)
+        accepted: list[WordProposal] = []
+        extras_after_anchor: dict[int, WordProposal] = {}
+        index = pair_count = 0
+        while index + 1 < len(aligned) and pair_count < max_pairs:
+            slot_index = index + 1
+            anchor, slot = aligned[index], aligned[slot_index]
+            slot_length = len(slot.word_text)
+            if (
+                slot_index == len(aligned) - 1
+                or not CROSSING_WORD_MIN_CELLS <= slot_length <= CROSSING_WORD_MAX_CELLS
+            ):
+                index += 1
+                continue
+
+            match = _first_internal_match(anchor.word_text, slot.word_text)
+            if match is None:
+                index += 1
+                continue
+            anchor_letter_index, _slot_letter_index = match
+            required_letter = anchor.word_text[anchor_letter_index]
+
+            rows = await db.execute(
+                select(
+                    DictionaryWord.id,
+                    DictionaryWord.word_text,
+                    DictionaryWord.definition,
+                )
+                .where(
+                    DictionaryWord.is_active.is_(True),
+                    DictionaryWord.language_code == language,
+                    DictionaryWord.letter_count == slot_length,
+                )
+                .order_by(DictionaryWord.id)
+            )
+            candidates: list[WordCandidate] = []
+            for word_id, word_text, definition in rows.all():
+                try:
+                    candidates.append(WordCandidate(word_id, word_text, definition))
+                except CrosswordGenerationError:
+                    logger.warning("Skipping invalid crossing dictionary word {}", word_id)
+
+            options = eligible_perpendicular_candidates(
+                spec,
+                route_specs,
+                aligned,
+                published,
+                accepted,
+                index,
+                anchor_letter_index,
+                required_letter,
+                slot_length,
+                candidates,
+                used_words,
+            )
+            if not options:
+                index += 1
+                continue
+
+            candidate, candidate_positions = rng.choice(options)
+            candidate_letter_index = rng.choice(candidate_positions)
+            aligned[index], perpendicular = link_crossing_pair(
+                anchor,
+                candidate,
+                anchor_letter_index,
+                candidate_letter_index,
+                rng,
+            )
+            extras_after_anchor[index] = perpendicular
+            accepted.append(perpendicular)
+            used_words.add(candidate.key)
+            pair_count += 1
+            index += 2
+
+        if extras_after_anchor:
+            with_extras: list[WordProposal] = []
+            for word_index, word in enumerate(aligned):
+                with_extras.append(word)
+                if word_index in extras_after_anchor:
+                    with_extras.append(extras_after_anchor[word_index])
+            proposals[spec.route_id] = with_extras
+
+    return proposals
+
+
 async def _build_proposals(
     db: AsyncSession,
     settings: Settings,
@@ -503,7 +622,7 @@ async def _build_proposals(
     candidates = await _load_candidates(
         db,
         settings.language,
-        max(CROSSING_WORD_MAX_CELLS, max(route.length_in_letters for route in new_routes)),
+        max(route.length_in_letters for route in new_routes),
     )
     specs = [
         SegmentSpec.from_cities(
@@ -515,13 +634,24 @@ async def _build_proposals(
         for route in routes
     ]
     occupied = [word.word_text for words in published.values() for word in words]
-    return await asyncio.to_thread(
+    rng = random.SystemRandom()
+    proposals = await asyncio.to_thread(
         generate_segment_proposals,
         [spec for spec in specs if spec.route_id not in published],
         candidates,
         occupied_words=occupied,
+        rng=rng,
         route_segments=specs,
         published_placements=published,
+    )
+    return await _add_database_crossings(
+        db,
+        settings.language,
+        specs,
+        [spec for spec in specs if spec.route_id not in published],
+        proposals,
+        published,
+        rng,
     )
 
 

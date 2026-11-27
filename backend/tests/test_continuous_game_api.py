@@ -1,4 +1,5 @@
 import os
+import random
 import unittest
 from decimal import Decimal
 from types import SimpleNamespace
@@ -17,10 +18,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api_errors import api_exception_handler, request_validation_exception_handler
 from app.config import Settings, get_settings
-from app.continuous_game_api import router, write_router
+from app.continuous_game_api import _add_database_crossings, router, write_router
+from app.crossword_generator import SegmentSpec
 from app.database import get_db
 from app.game_generation import GameGeneration, bootstrap_generation
-from app.game_segments import GameSegments, WordProposal
+from app.game_segments import GameSegments, PublishedWord, WordProposal
 from app.game_sessions import GameSessions
 from app.game_victories import GameVictories
 from app.models import City, DictionaryWord, GameResult, PhysicalCity, Route, User
@@ -42,6 +44,179 @@ DEFINITION_OF = {word: definition for definition, word in DEFINITIONS.items()}
 
 def word_of(placement: dict) -> str:
     return DEFINITIONS[placement["definition"]]
+
+
+class DatabaseCrossingTests(unittest.IsolatedAsyncioTestCase):
+    def base_words(self) -> tuple[SegmentSpec, list[WordProposal]]:
+        spec = SegmentSpec.from_cities(1, 18, (0, 0), (468, 0))
+        words = [
+            WordProposal(
+                placement_id=UUID(int=index),
+                dictionary_word_id=index,
+                word_text=text,
+                definition=f"Clue for {text}",
+                offset_px=offset,
+            )
+            for index, (text, offset) in enumerate(
+                (("train", 55), ("plane", 180), ("sword", 305)), 1
+            )
+        ]
+        return spec, words
+
+    @staticmethod
+    def db_with_rows(*row_sets):
+        return SimpleNamespace(
+            execute=AsyncMock(
+                side_effect=[
+                    SimpleNamespace(all=lambda rows=rows: rows) for rows in row_sets
+                ]
+            )
+        )
+
+    async def test_queries_same_length_and_keeps_base_words_along(self) -> None:
+        spec, base = self.base_words()
+        db = self.db_with_rows([
+            (2, "PLANE", "Already in the base layout after normalization"),
+            (4, "trace", "A separate perpendicular candidate"),
+        ])
+        proposals = {spec.route_id: list(base)}
+
+        result = await _add_database_crossings(
+            db, "en", [spec], [spec], proposals, {}, random.Random(1)
+        )
+
+        self.assertEqual(db.execute.await_count, 1)
+        statement = db.execute.await_args.args[0]
+        parameters = statement.compile().params
+        self.assertEqual(parameters["language_code_1"], "en")
+        self.assertEqual(parameters["letter_count_1"], 5)
+        self.assertIn("is_active IS true", statement.compile().string)
+
+        aligned = [item for item in result[spec.route_id] if item.orientation == "along"]
+        across = [item for item in result[spec.route_id] if item.orientation == "perpendicular"]
+        self.assertEqual(
+            [(item.word_text, item.offset_px) for item in aligned],
+            [(item.word_text, item.offset_px) for item in base],
+        )
+        self.assertEqual([item.word_text for item in across], ["trace"])
+        self.assertEqual(aligned[0].crossing_id, across[0].crossing_id)
+        self.assertEqual(aligned[0].crossing_index, 2)
+        self.assertEqual(across[0].crossing_index, 2)
+
+    async def test_randomly_selects_among_eligible_database_candidates(self) -> None:
+        selected = set()
+        for seed in range(12):
+            spec, base = self.base_words()
+            db = self.db_with_rows([
+                (4, "trace", "Candidate one"),
+                (5, "grace", "Candidate two"),
+            ])
+            proposals = {spec.route_id: list(base)}
+            result = await _add_database_crossings(
+                db, "en", [spec], [spec], proposals, {}, random.Random(seed)
+            )
+            across = [
+                item for item in result[spec.route_id]
+                if item.orientation == "perpendicular"
+            ]
+            self.assertEqual(len(across), 1)
+            selected.add(across[0].word_text)
+        self.assertEqual(selected, {"trace", "grace"})
+
+    async def test_empty_query_or_endpoint_only_letter_leaves_layout_unchanged(self) -> None:
+        for rows in ([], [(4, "azzzz", "The a occurs only at an endpoint")]):
+            with self.subTest(rows=rows):
+                spec, base = self.base_words()
+                db = self.db_with_rows(rows)
+                proposals = {spec.route_id: list(base)}
+                result = await _add_database_crossings(
+                    db, "en", [spec], [spec], proposals, {}, random.Random(1)
+                )
+                self.assertEqual(db.execute.await_count, 1)
+                self.assertEqual(result[spec.route_id], base)
+
+    async def test_last_or_ineligible_slot_does_not_trigger_a_query(self) -> None:
+        spec = SegmentSpec.from_cities(1, 18, (0, 0), (468, 0))
+        base = [
+            WordProposal(
+                placement_id=UUID(int=index), dictionary_word_id=index,
+                word_text=text, definition=f"Clue for {text}", offset_px=offset,
+            )
+            for index, (text, offset) in enumerate((("train", 90), ("plane", 275)), 1)
+        ]
+        db = SimpleNamespace(execute=AsyncMock())
+        proposals = {spec.route_id: list(base)}
+        result = await _add_database_crossings(
+            db, "en", [spec], [spec], proposals, {}, random.Random(1)
+        )
+        db.execute.assert_not_awaited()
+        self.assertEqual(result[spec.route_id], base)
+
+    async def test_previous_candidates_and_published_words_are_excluded(self) -> None:
+        spec = SegmentSpec.from_cities(1, 20, (0, 0), (520, 0))
+        base = [
+            WordProposal(
+                placement_id=UUID(int=index), dictionary_word_id=index,
+                word_text=text, definition=f"Clue for {text}", offset_px=offset,
+            )
+            for index, (text, offset) in enumerate(
+                (("cat", 50), ("bar", 140), ("dad", 230), ("map", 320), ("rag", 410)),
+                1,
+            )
+        ]
+        db = self.db_with_rows(
+            [(1, "cat", "Already in the base layout"), (10, "man", "First extra")],
+            [(10, "MAN", "Already selected after normalization"), (11, "hat", "Second extra")],
+        )
+        proposals = {spec.route_id: list(base)}
+        result = await _add_database_crossings(
+            db, "en", [spec], [spec], proposals, {}, random.Random(1)
+        )
+        self.assertEqual(db.execute.await_count, 2)
+        across = [item for item in result[spec.route_id] if item.orientation == "perpendicular"]
+        self.assertEqual([item.word_text for item in across], ["man", "hat"])
+        self.assertEqual(len({item.dictionary_word_id for item in across}), 2)
+        aligned = [item for item in result[spec.route_id] if item.orientation == "along"]
+        self.assertEqual([item.word_text for item in aligned], [item.word_text for item in base])
+
+    async def test_geometry_collision_skips_candidate_after_one_query(self) -> None:
+        spec, base = self.base_words()
+        crossing_axis = SegmentSpec.from_cities(
+            2, 8, (107, -104), (107, 104)
+        )
+        db = self.db_with_rows([(4, "trace", "Crosses another route axis")])
+        proposals = {spec.route_id: list(base)}
+        result = await _add_database_crossings(
+            db,
+            "en",
+            [spec, crossing_axis],
+            [spec],
+            proposals,
+            {},
+            random.Random(1),
+        )
+        self.assertEqual(db.execute.await_count, 1)
+        self.assertEqual(result[spec.route_id], base)
+
+    async def test_published_word_is_not_reused_for_a_crossing(self) -> None:
+        spec, base = self.base_words()
+        published_word = PublishedWord.model_validate(WordProposal(
+            placement_id=uuid4(), dictionary_word_id=4,
+            word_text="trace", definition="Already published", offset_px=52,
+        ).stored())
+        db = self.db_with_rows([(4, "TRACE", "Same normalized word")])
+        proposals = {spec.route_id: list(base)}
+        result = await _add_database_crossings(
+            db,
+            "en",
+            [spec],
+            [spec],
+            proposals,
+            {99: [published_word]},
+            random.Random(1),
+        )
+        self.assertEqual(db.execute.await_count, 1)
+        self.assertEqual(result[spec.route_id], base)
 
 
 @unittest.skipUnless(

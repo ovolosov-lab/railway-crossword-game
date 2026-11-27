@@ -5,10 +5,13 @@ import os
 import random
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from uuid import uuid4
 
+from loguru import logger
 from redis.asyncio import Redis
 
+import app.crossword_generator as crossword_generator
 from app.crossword_generator import (
     CELL_WIDTH_PX,
     CITY_CLEARANCE_PX,
@@ -17,6 +20,7 @@ from app.crossword_generator import (
     SegmentSpec,
     ShortWordAction,
     WordCandidate,
+    _score,
     _crossing_geometry_is_clear,
     _cell,
     _first_internal_match,
@@ -104,6 +108,25 @@ class SegmentGeometryTests(unittest.TestCase):
 
 
 class GeneratorTests(LayoutAssertions):
+    def test_score_always_penalizes_one_letter_words_but_optionally_two(self) -> None:
+        spec = SegmentSpec(1, 12, 312)
+        one_letter = word(1, "a")
+        two_letters = word(2, "to")
+
+        without_two_letter_penalty = _score(
+            [two_letters], spec, penalize_two_letter_words=False
+        )
+        with_two_letter_penalty = _score(
+            [two_letters], spec, penalize_two_letter_words=True
+        )
+        one_letter_score = _score(
+            [one_letter], spec, penalize_two_letter_words=False
+        )
+
+        self.assertEqual(without_two_letter_penalty[1:3], (0, 0))
+        self.assertEqual(with_two_letter_penalty[1:3], (0, 1))
+        self.assertEqual(one_letter_score[1:3], (1, 0))
+
     def test_single_word_is_centered(self) -> None:
         spec = SegmentSpec(1, 10, 260)
         proposals = generate_segment_proposals(
@@ -279,21 +302,31 @@ class OptionalCrossingTests(unittest.TestCase):
     def test_candidate_is_perpendicular_and_does_not_consume_along_capacity(self) -> None:
         spec = SegmentSpec.from_cities(1, 18, (0, 0), (468, 0))
         pool = [word(1, "train"), word(2, "plane"), word(3, "sword")]
+        crossing_candidate = word(4, "trace")
         proposals = generate_segment_proposals(
-            [spec], pool, rng=random.Random(1), attempts=1, choose_action=keep,
-            route_segments=[spec],
+            [spec], pool, rng=FirstChoiceRandom(1), attempts=1, choose_action=keep,
+            route_segments=[spec], crossing_candidates=[crossing_candidate],
         )[1]
-        self.assertEqual([item.word_text for item in proposals], ["train", "plane", "sword"])
         along = [item for item in proposals if item.orientation == "along"]
         perpendicular = [item for item in proposals if item.orientation == "perpendicular"]
+        self.assertEqual([item.word_text for item in along], ["train", "plane", "sword"])
+        self.assertEqual([item.word_text for item in perpendicular], ["trace"])
         self.assertEqual(len(perpendicular), 1)
-        self.assertEqual(len(along), 2)
+        self.assertEqual(len(along), 3)
         self.assertEqual(perpendicular[0].crossing_id, along[0].crossing_id)
         self.assertEqual(along[0].crossing_index, 2)
         self.assertEqual(perpendicular[0].crossing_index, 2)
         self.assertEqual(perpendicular[0].offset_px, along[0].offset_px + 2 * CELL_WIDTH_PX)
         self.assertEqual(perpendicular[0].y_offset_px + 2 * CELL_WIDTH_PX, 0)
-        self.assertEqual(along[0].offset_px, 90)
+
+        baseline = generate_segment_proposals(
+            [spec], pool, rng=FirstChoiceRandom(1), attempts=1, choose_action=keep,
+            route_segments=[spec],
+        )[1]
+        self.assertEqual(
+            [(item.word_text, item.offset_px) for item in along],
+            [(item.word_text, item.offset_px) for item in baseline],
+        )
 
     def test_seven_letter_candidate_is_allowed_but_eight_is_not(self) -> None:
         seven_cell_spec = SegmentSpec.from_cities(1, 20, (0, 0), (520, 0))
@@ -303,9 +336,10 @@ class OptionalCrossingTests(unittest.TestCase):
         seven_cell = generate_segment_proposals(
             [seven_cell_spec], seven_cell_words, rng=FirstChoiceRandom(1),
             attempts=1, choose_action=keep, route_segments=[seven_cell_spec],
+            crossing_candidates=[word(4, "seaside")],
         )[1]
         across = next(item for item in seven_cell if item.orientation == "perpendicular")
-        self.assertEqual(across.word_text, "railway")
+        self.assertEqual(across.word_text, "seaside")
         self.assertEqual(len(across.word_text), 7)
 
         eight_cell_spec = SegmentSpec.from_cities(1, 22, (0, 0), (572, 0))
@@ -315,6 +349,7 @@ class OptionalCrossingTests(unittest.TestCase):
         eight_cell = generate_segment_proposals(
             [eight_cell_spec], eight_cell_words, rng=FirstChoiceRandom(1),
             attempts=1, choose_action=keep, route_segments=[eight_cell_spec],
+            crossing_candidates=[word(4, "seaside")],
         )[1]
         self.assertTrue(all(item.orientation == "along" for item in eight_cell))
 
@@ -328,16 +363,24 @@ class OptionalCrossingTests(unittest.TestCase):
         self.assertEqual(len(proposals), 2)
         self.assertTrue(all(item.orientation == "along" for item in proposals))
 
-    def test_long_segment_caps_crossings_at_two(self) -> None:
-        spec = SegmentSpec.from_cities(1, 20, (0, 0), (520, 0))
-        pool = [word(i, value) for i, value in enumerate(("cat", "bar", "dad", "map", "rag"), 1)]
+    def test_long_segment_can_have_three_crossing_pairs(self) -> None:
+        spec = SegmentSpec.from_cities(1, 30, (0, 0), (780, 0))
+        pool = [
+            word(i, value)
+            for i, value in enumerate(("cat", "bar", "dad", "map", "rag", "pan", "hat"), 1)
+        ]
         proposals = generate_segment_proposals(
-            [spec], pool, rng=random.Random(1), attempts=1, choose_action=keep,
+            [spec], pool, rng=FirstChoiceRandom(1), attempts=1, choose_action=keep,
             route_segments=[spec],
+            crossing_candidates=[
+                word(i, value) for i, value in enumerate(
+                    ("man", "hat", "pan", "sad", "jam", "lap"), 10
+                )
+            ],
         )[1]
         pairs = {item.crossing_id for item in proposals if item.crossing_id is not None}
-        self.assertEqual(len(pairs), 2)
-        self.assertEqual(sum(item.orientation == "perpendicular" for item in proposals), 2)
+        self.assertEqual(len(pairs), 3)
+        self.assertEqual(sum(item.orientation == "perpendicular" for item in proposals), 3)
         self.assertEqual(proposals[-1].orientation, "along")
 
     def test_crossing_cells_match_for_either_segment_direction(self) -> None:
@@ -347,7 +390,7 @@ class OptionalCrossingTests(unittest.TestCase):
         for spec in (forward, reverse):
             proposals = generate_segment_proposals(
                 [spec], pool, rng=random.Random(1), attempts=1, choose_action=keep,
-                route_segments=[spec],
+                route_segments=[spec], crossing_candidates=[word(4, "trace")],
             )[1]
             along = next(item for item in proposals if item.orientation == "along")
             across = next(item for item in proposals if item.orientation == "perpendicular")
@@ -458,12 +501,53 @@ def _load_real_catalog() -> list[WordCandidate]:
     ]
 
 
-def _real_segments() -> list[SegmentSpec]:
+def _load_current_catalog(language: str) -> list[WordCandidate]:
+    if language not in {"ru", "en"}:
+        raise ValueError(f"Unsupported benchmark language: {language}")
+
+    def load_migration(filename: str, module_name: str):
+        path = MIGRATIONS / "versions" / filename
+        spec = importlib.util.spec_from_file_location(module_name, path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    if language == "ru":
+        migration = load_migration(
+            "f4a8c21d903b_merge_latest_dictionary_words.py",
+            "current_russian_catalog_migration",
+        )
+        entries, _duplicate_count = migration._read_word_catalog()
+    else:
+        base_migration = load_migration(
+            "72fd40c93b31_merge_english_dictionary.py",
+            "current_english_base_catalog_migration",
+        )
+        additional_migration = load_migration(
+            "ab3d7f51c9e2_import_remaining_english_words.py",
+            "current_english_additional_catalog_migration",
+        )
+        entries_by_word = {
+            entry["word_text"]: entry for entry in base_migration._read_catalog()
+        }
+        for entry in additional_migration._read_catalog():
+            entries_by_word.setdefault(entry["word_text"], entry)
+        entries = list(entries_by_word.values())
+
+    return [
+        WordCandidate(index, entry["word_text"], entry["definition"])
+        for index, entry in enumerate(entries, 1)
+    ]
+
+
+def _real_segments(language: str = "en") -> list[SegmentSpec]:
+    if language not in {"ru", "en"}:
+        raise ValueError(f"Unsupported benchmark language: {language}")
     routes = json.loads((MIGRATIONS / "routes.json").read_text(encoding="utf-8"))["routes"]
     cities = {
         city["id"]: city
         for city in json.loads(
-            (MIGRATIONS / "cities_en.json").read_text(encoding="utf-8")
+            (MIGRATIONS / f"cities_{language}.json").read_text(encoding="utf-8")
         )["cities"]
     }
     return [
@@ -509,7 +593,6 @@ class RealCatalogComparisonTests(LayoutAssertions):
     @classmethod
     def setUpClass(cls) -> None:
         cls.catalog = _load_real_catalog()
-        cls.by_id = {word.id: word for word in cls.catalog}
         cls.segments = _real_segments()
 
     def letter_count_share(self, layouts, letter_count: int) -> float:
@@ -519,34 +602,133 @@ class RealCatalogComparisonTests(LayoutAssertions):
         )
         return matching / total
 
-    def generated(self, seed: int, attempts: int):
-        proposals = generate_segment_proposals(
-            self.segments, self.catalog, rng=random.Random(seed), attempts=attempts
-        )
-        for spec in self.segments:
+    def generated(
+        self,
+        seed: int,
+        attempts: int,
+        *,
+        segments: list[SegmentSpec] | None = None,
+        catalog: list[WordCandidate] | None = None,
+        mode_log: list[tuple[int, bool]] | None = None,
+    ):
+        segments = segments or self.segments
+        catalog = catalog or self.catalog
+        by_id = {word.id: word for word in catalog}
+
+        def generate():
+            return generate_segment_proposals(
+                segments, catalog, rng=random.Random(seed), attempts=attempts
+            )
+
+        if mode_log is None:
+            proposals = generate()
+        else:
+            original_score = crossword_generator._score
+
+            def record_mode(words, spec, *, penalize_two_letter_words):
+                mode_log.append((spec.route_id, penalize_two_letter_words))
+                return original_score(
+                    words,
+                    spec,
+                    penalize_two_letter_words=penalize_two_letter_words,
+                )
+
+            with patch.object(crossword_generator, "_score", side_effect=record_mode):
+                proposals = generate()
+
+        for spec in segments:
             self.assert_valid_layout(spec, proposals[spec.route_id])
         return [
-            [self.by_id[p.dictionary_word_id] for p in proposals[spec.route_id]]
-            for spec in self.segments
+            [by_id[p.dictionary_word_id] for p in proposals[spec.route_id]]
+            for spec in segments
         ], proposals
 
-    def test_one_and_two_letter_shares_are_lower_than_the_previous_algorithm(self) -> None:
-        legacy, single, best = [], [], []
+    @staticmethod
+    def _proposal_signature(proposals):
+        return {
+            route_id: [
+                (
+                    word.dictionary_word_id,
+                    word.word_text,
+                    word.orientation,
+                    word.offset_px,
+                    word.y_offset_px,
+                    word.crossing_index,
+                )
+                for word in words
+            ]
+            for route_id, words in proposals.items()
+        }
+
+    def test_historical_english_benchmark_meets_frequency_targets(self) -> None:
+        legacy, best, mode_log = [], [], []
+        target_reached = total_segments = 0
         for seed in self.SEEDS:
             rng = random.Random(seed)
             legacy += [legacy_layout(spec, self.catalog, rng) for spec in self.segments]
-            single += self.generated(seed, attempts=1)[0]
-            best += self.generated(seed, attempts=6)[0]
+            layouts, _ = self.generated(seed, attempts=6, mode_log=mode_log)
+            best += layouts
+            for segment, words in zip(self.segments, layouts):
+                free = segment.word_area_px - sum(
+                    item.cells for item in words
+                ) * CELL_WIDTH_PX
+                free -= MIN_GAP_PX * (len(words) - 1)
+                target_reached += free <= segment.free_space_target_px
+                total_segments += 1
+
         old_shares = {
             count: self.letter_count_share(legacy, count) for count in (1, 2)
         }
-        for count in (1, 2):
-            with self.subTest(letter_count=count):
-                self.assertGreater(old_shares[count], 0.07)
-                self.assertLess(
-                    self.letter_count_share(single, count), old_shares[count] * 0.6
-                )
-                self.assertLess(self.letter_count_share(best, count), 0.01)
+        one_share = self.letter_count_share(best, 1)
+        two_share = self.letter_count_share(best, 2)
+        self.assertAlmostEqual(old_shares[2], 0.0839, delta=0.001)
+        self.assertGreaterEqual(two_share, 0.01)
+        self.assertLessEqual(two_share, 0.05)
+        self.assertLessEqual(one_share, 0.0002)
+        self.assertGreaterEqual(target_reached / total_segments, 0.95)
+
+        # Each of 30 seeds covers all 46 routes. The six scores for one segment
+        # must all use the same penalty mode, and the selected modes should
+        # approximate the configured 50/50 probability over the sample.
+        self.assertEqual(len(mode_log), len(self.SEEDS) * len(self.segments) * 6)
+        segment_modes = []
+        for offset in range(0, len(mode_log), 6):
+            group = mode_log[offset : offset + 6]
+            self.assertEqual(len({value for _, value in group}), 1)
+            self.assertEqual(len({route_id for route_id, _ in group}), 1)
+            segment_modes.append(group[0][1])
+        mode_share = sum(segment_modes) / len(segment_modes)
+        self.assertGreaterEqual(mode_share, 0.45)
+        self.assertLessEqual(mode_share, 0.55)
+        self.assertIn(True, segment_modes)
+        self.assertIn(False, segment_modes)
+        two_letter_segment_share = sum(
+            any(word.letters == 2 for word in words) for words in best
+        ) / len(best)
+        logger.info(
+            "Frequency benchmark historical en: word_count={}, routes={}, seeds={}, "
+            "one_letter_share={:.6%}, two_letter_share={:.6%}, "
+            "two_letter_segment_share={:.6%}, penalty_mode_share={:.6%}, "
+            "free_space_target_share={:.6%}",
+            len(self.catalog),
+            len(self.segments),
+            len(self.SEEDS),
+            one_share,
+            two_share,
+            two_letter_segment_share,
+            mode_share,
+            target_reached / total_segments,
+        )
+
+        first_modes: list[tuple[int, bool]] = []
+        _, first_proposals = self.generated(0, attempts=6, mode_log=first_modes)
+        repeated_modes: list[tuple[int, bool]] = []
+        _, repeated_proposals = self.generated(0, attempts=6, mode_log=repeated_modes)
+        self.assertEqual(first_modes, repeated_modes)
+        self.assertEqual(
+            self._proposal_signature(first_proposals),
+            self._proposal_signature(repeated_proposals),
+        )
 
     def test_real_routes_get_words_and_reach_the_free_space_target(self) -> None:
         reached = total = 0
@@ -560,6 +742,41 @@ class RealCatalogComparisonTests(LayoutAssertions):
                 reached += free <= spec.free_space_target_px
                 total += 1
         self.assertGreater(reached / total, 0.95)
+
+    def test_current_language_catalogs_get_separate_benchmark_metrics(self) -> None:
+        for language in ("ru", "en"):
+            catalog = _load_current_catalog(language)
+            segments = _real_segments(language)
+            layouts = []
+            reached = total_segments = 0
+            for seed in self.SEEDS:
+                generated, proposals = self.generated(
+                    seed,
+                    attempts=6,
+                    segments=segments,
+                    catalog=catalog,
+                )
+                self.assertFalse(route_is_empty(proposals))
+                layouts.extend(generated)
+                for segment, words in zip(segments, generated):
+                    self.assertTrue(words, f"{language} segment {segment.route_id} is empty")
+                    free = segment.word_area_px - sum(w.cells for w in words) * CELL_WIDTH_PX
+                    free -= MIN_GAP_PX * (len(words) - 1)
+                    reached += free <= segment.free_space_target_px
+                    total_segments += 1
+
+            metrics = {
+                "word_count": len(catalog),
+                "two_letter_share": self.letter_count_share(layouts, 2),
+                "two_letter_segment_share": sum(
+                    any(word.letters == 2 for word in words) for words in layouts
+                ) / len(layouts),
+                "one_letter_share": self.letter_count_share(layouts, 1),
+                "free_space_target_share": reached / total_segments,
+            }
+            self.assertEqual(len(segments), 46)
+            self.assertGreaterEqual(metrics["free_space_target_share"], 0.95)
+            logger.info("Frequency benchmark {}: {}", language, metrics)
 
 
 @unittest.skipUnless(os.environ.get("REDIS_TEST_URL"), "Set REDIS_TEST_URL for isolated Redis tests.")
