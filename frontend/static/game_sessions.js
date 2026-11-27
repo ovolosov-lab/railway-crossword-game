@@ -915,9 +915,9 @@ import {
     const placeholders = Array(Math.max(0, Number(placement.letter_count) || 0)).fill("_");
     for (const hint of placement.hints || []) {
       if (hint.hint_type === "first_letter" && placeholders.length) {
-        placeholders[0] = hint.value;
+        placeholders[0] = hint.value.toLocaleUpperCase(locale);
       } else if (hint.hint_type === "last_letter" && placeholders.length) {
-        placeholders[placeholders.length - 1] = hint.value;
+        placeholders[placeholders.length - 1] = hint.value.toLocaleUpperCase(locale);
       }
     }
     el.answer.placeholder = placeholders.join("");
@@ -937,7 +937,7 @@ import {
     }
     const hints = (placement.hints || []).map((hint) => {
       const label = hint.hint_type === "first_letter" ? t("hint_first") : t("hint_last");
-      return `${label}: ${hint.value}`;
+      return `${label}: ${hint.value.toLocaleUpperCase(locale)}`;
     });
     if (el.hintFeedback.dataset.kind !== "error") {
       setFeedback(el.hintFeedback, hints.join(" · "), "success");
@@ -1183,8 +1183,11 @@ import {
         current.hint_types_used = [...new Set([...(current.hint_types_used || []), result.hint.hint_type])];
         const hints = current.hints || [];
         const existing = hints.find((hint) => hint.hint_type === result.hint.hint_type);
-        if (existing) existing.value = result.hint.value;
-        else hints.push({ hint_type: result.hint.hint_type, value: result.hint.value.toUpperCase() });
+        if (existing) existing.value = result.hint.value.toLocaleUpperCase(locale);
+        else hints.push({
+          hint_type: result.hint.hint_type,
+          value: result.hint.value.toLocaleUpperCase(locale),
+        });
         current.hints = hints;
         const charged = Math.max(0, Number(result.hint.points_charged) || 0);
         setFeedback(el.hintFeedback, charged
