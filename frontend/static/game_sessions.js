@@ -929,9 +929,9 @@ import {
     el.firstHint.disabled = state.busy;
     el.lastHint.disabled = state.busy;
     el.firstHint.textContent = placement.hint_types_used.includes("first_letter")
-      ? `${t("show_again")}: ${t("hint_first").toLocaleLowerCase(locale)}` : t("hint_first");
+      ? `${t("show_again")}: ${t("hint_first").toLocaleLowerCase(locale)}` : `✨ ${t("hint_first")}`;
     el.lastHint.textContent = placement.hint_types_used.includes("last_letter")
-      ? `${t("show_again")}: ${t("hint_last").toLocaleLowerCase(locale)}` : t("hint_last");
+      ? `${t("show_again")}: ${t("hint_last").toLocaleLowerCase(locale)}` : `✨ ${t("hint_last")}`;
     if (placement.is_guessed && placement.word_text) {
       setFeedback(el.wordFeedback, `${t("answer")}: ${placement.word_text}`, "success");
     }
@@ -1184,7 +1184,7 @@ import {
         const hints = current.hints || [];
         const existing = hints.find((hint) => hint.hint_type === result.hint.hint_type);
         if (existing) existing.value = result.hint.value;
-        else hints.push({ hint_type: result.hint.hint_type, value: result.hint.value });
+        else hints.push({ hint_type: result.hint.hint_type, value: result.hint.value.toUpperCase() });
         current.hints = hints;
         const charged = Math.max(0, Number(result.hint.points_charged) || 0);
         setFeedback(el.hintFeedback, charged
