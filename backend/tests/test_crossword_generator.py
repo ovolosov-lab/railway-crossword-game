@@ -29,7 +29,12 @@ from app.crossword_generator import (
     route_is_empty,
 )
 from app.game_generation import GameGeneration, bootstrap_generation
-from app.game_segments import CrosswordGenerationFailed, GameSegments
+from app.game_segments import (
+    CrosswordGenerationFailed,
+    GameSegments,
+    PublishedWord,
+    WordProposal,
+)
 from app.game_sessions import GameSessions
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
@@ -198,6 +203,42 @@ class GeneratorTests(LayoutAssertions):
         )[1]
         self.assertEqual(sorted(texts(proposals)), ["station", "to"])
 
+    def test_two_letter_word_in_one_segment_suppresses_them_on_later_segments(self) -> None:
+        first = SegmentSpec(1, 6, 156)
+        second = SegmentSpec(2, 9, 234)
+        proposals = generate_segment_proposals(
+            [first, second],
+            [word(1, "to"), word(2, "go"), word(3, "up"), word(4, "rail")],
+            rng=FirstChoiceRandom(1), attempts=1, choose_action=keep,
+            suppress_two_letter_words_after_first_use=True,
+        )
+
+        self.assertEqual(texts(proposals[1]), ["to"])
+        self.assertEqual(texts(proposals[2]), ["rail"])
+        self.assert_valid_layout(second, proposals[2])
+        self.assertEqual(proposals[2][0].offset_px, 78)
+
+    def test_published_two_letter_word_suppresses_unpublished_route_segments(self) -> None:
+        published_spec = SegmentSpec(1, 6, 156)
+        new_spec = SegmentSpec(2, 9, 234)
+        published_word = PublishedWord.model_validate(WordProposal(
+            placement_id=uuid4(), dictionary_word_id=1,
+            word_text="to", definition="A two-letter word", offset_px=39,
+        ).stored())
+        proposals = generate_segment_proposals(
+            [new_spec],
+            [word(2, "go"), word(3, "up"), word(4, "rail")],
+            occupied_words=["to"],
+            rng=FirstChoiceRandom(1), attempts=1, choose_action=keep,
+            route_segments=[published_spec, new_spec],
+            published_placements={1: [published_word]},
+            suppress_two_letter_words_after_first_use=True,
+        )
+
+        self.assertEqual(texts(proposals[2]), ["rail"])
+        self.assert_valid_layout(new_spec, proposals[2])
+        self.assertEqual(proposals[2][0].offset_px, 78)
+
     def test_longer_action_replaces_previous_and_two_letter_words(self) -> None:
         spec = SegmentSpec(1, 9, 234)
         pool = [word(1, "cat"), word(2, "to"), word(3, "railway")]
@@ -300,23 +341,26 @@ class OptionalCrossingTests(unittest.TestCase):
         self.assertIsNone(_first_internal_match("train", "to"))
 
     def test_candidate_is_perpendicular_and_does_not_consume_along_capacity(self) -> None:
-        spec = SegmentSpec.from_cities(1, 18, (0, 0), (468, 0))
-        pool = [word(1, "train"), word(2, "plane"), word(3, "sword")]
-        crossing_candidate = word(4, "trace")
+        spec = SegmentSpec.from_cities(1, 23, (0, 0), (598, 0))
+        pool = [word(1, "cat"), word(2, "plane"), word(3, "crane"), word(4, "sword")]
+        crossing_candidate = word(5, "trace")
         proposals = generate_segment_proposals(
             [spec], pool, rng=FirstChoiceRandom(1), attempts=1, choose_action=keep,
             route_segments=[spec], crossing_candidates=[crossing_candidate],
         )[1]
         along = [item for item in proposals if item.orientation == "along"]
         perpendicular = [item for item in proposals if item.orientation == "perpendicular"]
-        self.assertEqual([item.word_text for item in along], ["train", "plane", "sword"])
+        self.assertEqual([item.word_text for item in along], ["cat", "plane", "crane", "sword"])
         self.assertEqual([item.word_text for item in perpendicular], ["trace"])
         self.assertEqual(len(perpendicular), 1)
-        self.assertEqual(len(along), 3)
-        self.assertEqual(perpendicular[0].crossing_id, along[0].crossing_id)
-        self.assertEqual(along[0].crossing_index, 2)
+        self.assertEqual(len(along), 4)
+        self.assertIsNone(along[0].crossing_id)
+        self.assertIsNotNone(along[1].crossing_id)
+        self.assertIsNone(along[-1].crossing_id)
+        self.assertEqual(perpendicular[0].crossing_id, along[1].crossing_id)
+        self.assertEqual(along[1].crossing_index, 2)
         self.assertEqual(perpendicular[0].crossing_index, 2)
-        self.assertEqual(perpendicular[0].offset_px, along[0].offset_px + 2 * CELL_WIDTH_PX)
+        self.assertEqual(perpendicular[0].offset_px, along[1].offset_px + 2 * CELL_WIDTH_PX)
         self.assertEqual(perpendicular[0].y_offset_px + 2 * CELL_WIDTH_PX, 0)
 
         baseline = generate_segment_proposals(
@@ -329,31 +373,31 @@ class OptionalCrossingTests(unittest.TestCase):
         )
 
     def test_seven_letter_candidate_is_allowed_but_eight_is_not(self) -> None:
-        seven_cell_spec = SegmentSpec.from_cities(1, 20, (0, 0), (520, 0))
+        seven_cell_spec = SegmentSpec.from_cities(1, 30, (0, 0), (780, 0))
         seven_cell_words = [
-            word(1, "train"), word(2, "railway"), word(3, "sword"),
+            word(1, "cat"), word(2, "train"), word(3, "railway"), word(4, "sword"),
         ]
         seven_cell = generate_segment_proposals(
             [seven_cell_spec], seven_cell_words, rng=FirstChoiceRandom(1),
             attempts=1, choose_action=keep, route_segments=[seven_cell_spec],
-            crossing_candidates=[word(4, "seaside")],
+            crossing_candidates=[word(5, "seaside")],
         )[1]
         across = next(item for item in seven_cell if item.orientation == "perpendicular")
         self.assertEqual(across.word_text, "seaside")
         self.assertEqual(len(across.word_text), 7)
 
-        eight_cell_spec = SegmentSpec.from_cities(1, 22, (0, 0), (572, 0))
+        eight_cell_spec = SegmentSpec.from_cities(1, 24, (0, 0), (624, 0))
         eight_cell_words = [
-            word(1, "train"), word(2, "signaled"), word(3, "sword"),
+            word(1, "cat"), word(2, "train"), word(3, "signaled"), word(4, "sword"),
         ]
         eight_cell = generate_segment_proposals(
             [eight_cell_spec], eight_cell_words, rng=FirstChoiceRandom(1),
             attempts=1, choose_action=keep, route_segments=[eight_cell_spec],
-            crossing_candidates=[word(4, "seaside")],
+            crossing_candidates=[word(5, "seaside")],
         )[1]
         self.assertTrue(all(item.orientation == "along" for item in eight_cell))
 
-    def test_last_word_cannot_be_perpendicular_and_two_word_layout_has_no_pair(self) -> None:
+    def test_endpoint_words_cannot_anchor_and_two_word_layout_has_no_pair(self) -> None:
         spec = SegmentSpec.from_cities(1, 13, (0, 0), (338, 0))
         proposals = generate_segment_proposals(
             [spec], [word(1, "train"), word(2, "plane")],
@@ -363,11 +407,20 @@ class OptionalCrossingTests(unittest.TestCase):
         self.assertEqual(len(proposals), 2)
         self.assertTrue(all(item.orientation == "along" for item in proposals))
 
+        three_word_spec = SegmentSpec.from_cities(2, 18, (0, 0), (468, 0))
+        three_word_proposals = generate_segment_proposals(
+            [three_word_spec],
+            [word(3, "train"), word(4, "plane"), word(5, "sword")],
+            rng=FirstChoiceRandom(1), attempts=1, choose_action=keep,
+            route_segments=[three_word_spec], crossing_candidates=[word(6, "trace")],
+        )[2]
+        self.assertTrue(all(item.crossing_id is None for item in three_word_proposals))
+
     def test_long_segment_can_have_three_crossing_pairs(self) -> None:
-        spec = SegmentSpec.from_cities(1, 30, (0, 0), (780, 0))
+        spec = SegmentSpec.from_cities(1, 36, (0, 0), (936, 0))
         pool = [
             word(i, value)
-            for i, value in enumerate(("cat", "bar", "dad", "map", "rag", "pan", "hat"), 1)
+            for i, value in enumerate(("cat", "bar", "dad", "map", "rag", "pan", "hat", "jam"), 1)
         ]
         proposals = generate_segment_proposals(
             [spec], pool, rng=FirstChoiceRandom(1), attempts=1, choose_action=keep,
@@ -381,18 +434,24 @@ class OptionalCrossingTests(unittest.TestCase):
         pairs = {item.crossing_id for item in proposals if item.crossing_id is not None}
         self.assertEqual(len(pairs), 3)
         self.assertEqual(sum(item.orientation == "perpendicular" for item in proposals), 3)
-        self.assertEqual(proposals[-1].orientation, "along")
+        aligned = [item for item in proposals if item.orientation == "along"]
+        self.assertEqual(aligned[-1].orientation, "along")
+        self.assertIsNone(aligned[0].crossing_id)
+        self.assertIsNone(aligned[-1].crossing_id)
 
     def test_crossing_cells_match_for_either_segment_direction(self) -> None:
-        forward = SegmentSpec.from_cities(1, 18, (0, 0), (468, 0))
-        reverse = SegmentSpec.from_cities(1, 18, (468, 0), (0, 0))
-        pool = [word(1, "train"), word(2, "plane"), word(3, "sword")]
+        forward = SegmentSpec.from_cities(1, 23, (0, 0), (598, 0))
+        reverse = SegmentSpec.from_cities(1, 23, (598, 0), (0, 0))
+        pool = [word(1, "cat"), word(2, "plane"), word(3, "crane"), word(4, "sword")]
         for spec in (forward, reverse):
             proposals = generate_segment_proposals(
                 [spec], pool, rng=random.Random(1), attempts=1, choose_action=keep,
-                route_segments=[spec], crossing_candidates=[word(4, "trace")],
+                route_segments=[spec], crossing_candidates=[word(5, "trace")],
             )[1]
-            along = next(item for item in proposals if item.orientation == "along")
+            along = next(
+                item for item in proposals
+                if item.orientation == "along" and item.crossing_id is not None
+            )
             across = next(item for item in proposals if item.orientation == "perpendicular")
             first_cell = _cell(spec, along, along.crossing_index)
             second_cell = _cell(spec, across, across.crossing_index)
@@ -617,7 +676,12 @@ class RealCatalogComparisonTests(LayoutAssertions):
 
         def generate():
             return generate_segment_proposals(
-                segments, catalog, rng=random.Random(seed), attempts=attempts
+                segments,
+                catalog,
+                rng=random.Random(seed),
+                attempts=attempts,
+                # This benchmark measures ADR 0011's per-segment 50/50 scoring mode.
+                suppress_two_letter_words_after_first_use=False,
             )
 
         if mode_log is None:

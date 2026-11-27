@@ -48,7 +48,7 @@ def word_of(placement: dict) -> str:
 
 class DatabaseCrossingTests(unittest.IsolatedAsyncioTestCase):
     def base_words(self) -> tuple[SegmentSpec, list[WordProposal]]:
-        spec = SegmentSpec.from_cities(1, 18, (0, 0), (468, 0))
+        spec = SegmentSpec.from_cities(1, 23, (0, 0), (598, 0))
         words = [
             WordProposal(
                 placement_id=UUID(int=index),
@@ -58,7 +58,7 @@ class DatabaseCrossingTests(unittest.IsolatedAsyncioTestCase):
                 offset_px=offset,
             )
             for index, (text, offset) in enumerate(
-                (("train", 55), ("plane", 180), ("sword", 305)), 1
+                (("cat", 55), ("plane", 180), ("crane", 305), ("sword", 430)), 1
             )
         ]
         return spec, words
@@ -77,7 +77,7 @@ class DatabaseCrossingTests(unittest.IsolatedAsyncioTestCase):
         spec, base = self.base_words()
         db = self.db_with_rows([
             (2, "PLANE", "Already in the base layout after normalization"),
-            (4, "trace", "A separate perpendicular candidate"),
+            (5, "trace", "A separate perpendicular candidate"),
         ])
         proposals = {spec.route_id: list(base)}
 
@@ -99,8 +99,9 @@ class DatabaseCrossingTests(unittest.IsolatedAsyncioTestCase):
             [(item.word_text, item.offset_px) for item in base],
         )
         self.assertEqual([item.word_text for item in across], ["trace"])
-        self.assertEqual(aligned[0].crossing_id, across[0].crossing_id)
-        self.assertEqual(aligned[0].crossing_index, 2)
+        self.assertIsNone(aligned[0].crossing_id)
+        self.assertEqual(aligned[1].crossing_id, across[0].crossing_id)
+        self.assertEqual(aligned[1].crossing_index, 2)
         self.assertEqual(across[0].crossing_index, 2)
 
     async def test_randomly_selects_among_eligible_database_candidates(self) -> None:
@@ -108,8 +109,8 @@ class DatabaseCrossingTests(unittest.IsolatedAsyncioTestCase):
         for seed in range(12):
             spec, base = self.base_words()
             db = self.db_with_rows([
-                (4, "trace", "Candidate one"),
-                (5, "grace", "Candidate two"),
+                (5, "trace", "Candidate one"),
+                (6, "grace", "Candidate two"),
             ])
             proposals = {spec.route_id: list(base)}
             result = await _add_database_crossings(
@@ -152,15 +153,35 @@ class DatabaseCrossingTests(unittest.IsolatedAsyncioTestCase):
         db.execute.assert_not_awaited()
         self.assertEqual(result[spec.route_id], base)
 
-    async def test_previous_candidates_and_published_words_are_excluded(self) -> None:
-        spec = SegmentSpec.from_cities(1, 20, (0, 0), (520, 0))
+    async def test_first_word_is_not_queried_as_a_crossing_anchor(self) -> None:
+        spec = SegmentSpec.from_cities(1, 18, (0, 0), (468, 0))
         base = [
             WordProposal(
                 placement_id=UUID(int=index), dictionary_word_id=index,
                 word_text=text, definition=f"Clue for {text}", offset_px=offset,
             )
             for index, (text, offset) in enumerate(
-                (("cat", 50), ("bar", 140), ("dad", 230), ("map", 320), ("rag", 410)),
+                (("train", 55), ("plane", 180), ("sword", 305)), 1
+            )
+        ]
+        db = SimpleNamespace(execute=AsyncMock())
+
+        result = await _add_database_crossings(
+            db, "en", [spec], [spec], {spec.route_id: list(base)}, {}, random.Random(1)
+        )
+
+        db.execute.assert_not_awaited()
+        self.assertEqual(result[spec.route_id], base)
+
+    async def test_previous_candidates_and_published_words_are_excluded(self) -> None:
+        spec = SegmentSpec.from_cities(1, 25, (0, 0), (650, 0))
+        base = [
+            WordProposal(
+                placement_id=UUID(int=index), dictionary_word_id=index,
+                word_text=text, definition=f"Clue for {text}", offset_px=offset,
+            )
+            for index, (text, offset) in enumerate(
+                (("cat", 50), ("bar", 140), ("dad", 230), ("map", 320), ("rag", 410), ("pan", 500)),
                 1,
             )
         ]
@@ -179,12 +200,47 @@ class DatabaseCrossingTests(unittest.IsolatedAsyncioTestCase):
         aligned = [item for item in result[spec.route_id] if item.orientation == "along"]
         self.assertEqual([item.word_text for item in aligned], [item.word_text for item in base])
 
+    async def test_eight_word_segment_can_get_three_database_crossings(self) -> None:
+        spec = SegmentSpec.from_cities(1, 36, (0, 0), (936, 0))
+        base = [
+            WordProposal(
+                placement_id=UUID(int=index),
+                dictionary_word_id=index,
+                word_text=text,
+                definition=f"Clue for {text}",
+                offset_px=60 + (index - 1) * 100,
+            )
+            for index, text in enumerate(
+                ("cat", "bar", "dad", "map", "rag", "pan", "hat", "jam"), 1
+            )
+        ]
+        db = self.db_with_rows(
+            [(10, "man", "First extra")],
+            [(11, "sad", "Second extra")],
+            [(12, "lap", "Third extra")],
+        )
+
+        result = await _add_database_crossings(
+            db, "en", [spec], [spec], {spec.route_id: list(base)}, {}, random.Random(1)
+        )
+
+        across = [item for item in result[spec.route_id] if item.orientation == "perpendicular"]
+        aligned = [item for item in result[spec.route_id] if item.orientation == "along"]
+        self.assertEqual(db.execute.await_count, 3)
+        self.assertEqual([item.word_text for item in across], ["man", "sad", "lap"])
+        self.assertIsNone(aligned[0].crossing_id)
+        self.assertIsNone(aligned[-1].crossing_id)
+        self.assertEqual(
+            [item.word_text for item in aligned if item.crossing_id is not None],
+            ["bar", "map", "pan"],
+        )
+
     async def test_geometry_collision_skips_candidate_after_one_query(self) -> None:
         spec, base = self.base_words()
         crossing_axis = SegmentSpec.from_cities(
-            2, 8, (107, -104), (107, 104)
+            2, 8, (232, -104), (232, 104)
         )
-        db = self.db_with_rows([(4, "trace", "Crosses another route axis")])
+        db = self.db_with_rows([(5, "trace", "Crosses another route axis")])
         proposals = {spec.route_id: list(base)}
         result = await _add_database_crossings(
             db,
@@ -201,10 +257,10 @@ class DatabaseCrossingTests(unittest.IsolatedAsyncioTestCase):
     async def test_published_word_is_not_reused_for_a_crossing(self) -> None:
         spec, base = self.base_words()
         published_word = PublishedWord.model_validate(WordProposal(
-            placement_id=uuid4(), dictionary_word_id=4,
+            placement_id=uuid4(), dictionary_word_id=5,
             word_text="trace", definition="Already published", offset_px=52,
         ).stored())
-        db = self.db_with_rows([(4, "TRACE", "Same normalized word")])
+        db = self.db_with_rows([(5, "TRACE", "Same normalized word")])
         proposals = {spec.route_id: list(base)}
         result = await _add_database_crossings(
             db,

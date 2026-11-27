@@ -53,6 +53,11 @@ def random_action(rng: random.Random) -> ShortWordAction:
     return rng.choice(list(ShortWordAction))
 
 
+def _letter_count(word_text: str) -> int:
+    normalized = unicodedata.normalize("NFC", word_text)
+    return sum(1 for char in normalized if unicodedata.category(char).startswith("L"))
+
+
 @dataclass(frozen=True)
 class WordCandidate:
     """A dictionary word of the game language, independent of the ORM model."""
@@ -68,11 +73,7 @@ class WordCandidate:
         text = unicodedata.normalize("NFC", self.word_text)
         object.__setattr__(self, "word_text", text)
         object.__setattr__(self, "cells", len(text))
-        object.__setattr__(
-            self,
-            "letters",
-            sum(1 for char in text if unicodedata.category(char).startswith("L")),
-        )
+        object.__setattr__(self, "letters", _letter_count(text))
         object.__setattr__(self, "key", normalize_answer(text))
         if self.id <= 0 or self.letters == 0 or not self.definition.strip():
             raise CrosswordGenerationError(f"Invalid dictionary word {self.id}.")
@@ -144,6 +145,8 @@ def _fill(
     blocked: frozenset[str],
     rng: random.Random,
     choose_action: ActionChooser,
+    *,
+    allow_two_letter_words: bool = True,
 ) -> list[WordCandidate]:
     words: list[WordCandidate] = []
     while True:
@@ -152,6 +155,7 @@ def _fill(
         options = [
             word for word in pool
             if word.key not in used and word.cells * CELL_WIDTH_PX <= room
+            and (allow_two_letter_words or word.letters != 2)
         ]
         if not options:
             return words
@@ -388,13 +392,17 @@ def _proposal_from_published(word: PublishedWord) -> WordProposal:
 
 
 def maximum_crossing_pairs(words: Sequence[WordProposal]) -> int:
-    """Return the existing per-segment ceiling for optional crossing pairs."""
+    """Return the per-segment ceiling after excluding both endpoint words."""
     middle_words = words[1:-1]
     if len(words) >= 3 and any(
         len(word.word_text) >= CROSSING_WORD_MIN_CELLS for word in middle_words
     ):
-        return CROSSING_MAX_PAIRS_LONG
-    return CROSSING_MAX_PAIRS_SHORT
+        policy_limit = CROSSING_MAX_PAIRS_LONG
+    else:
+        policy_limit = CROSSING_MAX_PAIRS_SHORT
+    interior_word_count = max(0, len(words) - 2)
+    available_non_overlapping_pairs = interior_word_count // 2
+    return min(policy_limit, available_non_overlapping_pairs)
 
 
 def eligible_perpendicular_candidates(
@@ -410,8 +418,8 @@ def eligible_perpendicular_candidates(
     candidates: Sequence[WordCandidate],
     used_words: Iterable[str],
 ) -> list[tuple[WordCandidate, tuple[int, ...]]]:
-    """Filter one DB result set to unique candidates with free crossing geometry."""
-    if not 0 <= anchor_index < len(aligned_words):
+    """Filter candidates for an internal anchor to unique, collision-free options."""
+    if not 1 <= anchor_index < len(aligned_words) - 1:
         return []
     anchor = aligned_words[anchor_index]
     required = normalize_answer(required_letter)
@@ -503,7 +511,8 @@ def _apply_optional_crossings(
     used.update(normalize_answer(word.word_text) for word in aligned)
     extras_after_anchor: dict[int, WordProposal] = {}
     accepted_crossings: list[WordProposal] = []
-    index = pair_count = 0
+    # The first along word is next to a city endpoint and cannot anchor a pair.
+    index, pair_count = 1, 0
     while index + 1 < len(aligned) and pair_count < max_pairs:
         slot_index = index + 1
         anchor, slot = aligned[index], aligned[slot_index]
@@ -634,6 +643,7 @@ def generate_segment_proposals(
     route_segments: Sequence[SegmentSpec] | None = None,
     published_placements: Mapping[int, Sequence[PublishedWord]] | None = None,
     crossing_candidates: Iterable[WordCandidate] = (),
+    suppress_two_letter_words_after_first_use: bool = True,
 ) -> dict[int, list[WordProposal]]:
     """Create words and offsets for new segments, in route order.
 
@@ -660,11 +670,30 @@ def generate_segment_proposals(
     if len({word.id for word in pool}) != len(pool):
         raise CrosswordGenerationError("Dictionary candidates must be unique.")
     blocked = {normalize_answer(word) for word in occupied_words}
+    two_letter_words_used = (
+        sum(
+            _letter_count(word.word_text) == 2
+            for words in (published_placements or {}).values()
+            for word in words
+        )
+        if suppress_two_letter_words_after_first_use
+        else 0
+    )
     aligned_by_route: dict[int, list[WordProposal]] = {}
     for spec in segments:
         penalize_two_letter_words = rng.random() < 0.5
+        allow_two_letter_words = (
+            not suppress_two_letter_words_after_first_use or two_letter_words_used == 0
+        )
         layouts = (
-            _fill(spec.word_area_px, pool, blocked, rng, choose_action)
+            _fill(
+                spec.word_area_px,
+                pool,
+                blocked,
+                rng,
+                choose_action,
+                allow_two_letter_words=allow_two_letter_words,
+            )
             for _ in range(attempts)
         )
         best = min(
@@ -676,6 +705,8 @@ def generate_segment_proposals(
             ),
         )
         blocked.update(word.key for word in best)
+        if suppress_two_letter_words_after_first_use:
+            two_letter_words_used += sum(word.letters == 2 for word in best)
         aligned_by_route[spec.route_id] = _place(best, spec, rng)
 
     if not crossing_pool:

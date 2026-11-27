@@ -547,6 +547,7 @@ import {
     el.santaTrain.onanimationend = null;
     el.trainAudio.pause();
     el.trainAudio.currentTime = 0;
+    el.victoryAudio.onended = null;
     el.victoryAudio.pause();
     el.victoryAudio.currentTime = 0;
   }
@@ -554,8 +555,18 @@ import {
   function showVictoryCelebration() {
     el.victoryOverlay.hidden = false;
     animateVictorySantaTrain();
+    el.victoryAudio.onended = () => {
+      el.victoryAudio.onended = null;
+      el.trainAudio.currentTime = 0;
+      const trainPlay = el.trainAudio.play();
+      if (trainPlay?.catch) trainPlay.catch(() => {});
+    };
     const play = el.victoryAudio.play();
-    if (play?.catch) play.catch(() => {});
+    if (play?.catch) {
+      play.catch(() => {
+        el.victoryAudio.onended = null;
+      });
+    }
     const throwConfetti = () => {
       if (typeof window.confetti !== "function") return;
       for (const [originX, angle] of [[0.08, 60], [0.92, 120]]) {
@@ -569,7 +580,11 @@ import {
     state.victoryConfettiTimer = window.setInterval(throwConfetti, 5000);
     state.victoryTimer = window.setTimeout(() => {
       el.victoryOverlay.hidden = true;
-      clearVictoryTimers();
+      state.victoryTimer = null;
+      if (state.victoryConfettiTimer !== null) {
+        window.clearInterval(state.victoryConfettiTimer);
+        state.victoryConfettiTimer = null;
+      }
     }, 10000);
   }
 
@@ -828,6 +843,27 @@ import {
               clearMissingSession: true, expectedSessionId: sessionId,
             });
             stopSyncPolling();
+          } else if (String(current.session.id) !== String(sessionId)) {
+            const replacementEpoch = ++state.epoch;
+            state.busy = false;
+            state.selectedRouteIds = [];
+            state.selectedCityIds = [];
+            state.activePlacementId = null;
+            storageRemove(`railway:draft-route:${sessionId}`);
+            if (el.wordDialog.open) el.wordDialog.close();
+
+            if (applySnapshot(current, replacementEpoch, {
+              allowSessionReplacement: true,
+              live: false,
+            }) && current.player?.state === "selecting_route") {
+              state.selectedRouteIds = [];
+              state.selectedCityIds = initialSelectedCityIds(
+                current.player.state,
+                current.player.source_city_id,
+              );
+              restoreDraftRoute();
+              renderPlayer();
+            }
           }
         }
       } else if (error.status >= 500 || !error.status) {

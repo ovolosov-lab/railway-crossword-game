@@ -128,7 +128,12 @@ async def add_dictionary_words_from_file(
     words: list[dict[str, str | int]] = []
     try:
         with path.open(encoding="utf-8-sig", newline="") as source:
-            reader = csv.reader(source, delimiter=";", strict=True)
+            reader = csv.reader(
+                source,
+                delimiter=";",
+                skipinitialspace=True,
+                strict=True,
+            )
             for line_number, fields in enumerate(reader, start=1):
                 if len(fields) != 2:
                     raise ValueError(

@@ -517,7 +517,8 @@ async def _add_database_crossings(
         max_pairs = maximum_crossing_pairs(aligned)
         accepted: list[WordProposal] = []
         extras_after_anchor: dict[int, WordProposal] = {}
-        index = pair_count = 0
+        # Match the pure generator: endpoint along words cannot anchor pairs.
+        index, pair_count = 1, 0
         while index + 1 < len(aligned) and pair_count < max_pairs:
             slot_index = index + 1
             anchor, slot = aligned[index], aligned[slot_index]
@@ -643,6 +644,7 @@ async def _build_proposals(
         rng=rng,
         route_segments=specs,
         published_placements=published,
+        suppress_two_letter_words_after_first_use=True,
     )
     return await _add_database_crossings(
         db,
