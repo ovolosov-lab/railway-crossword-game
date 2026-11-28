@@ -23,7 +23,6 @@ from app.crossword_generator import (
     _score,
     _crossing_geometry_is_clear,
     _cell,
-    _first_internal_match,
     _neighbor_angle_allows,
     generate_segment_proposals,
     route_is_empty,
@@ -336,10 +335,6 @@ class GeneratorTests(LayoutAssertions):
 
 
 class OptionalCrossingTests(unittest.TestCase):
-    def test_first_internal_match_scans_anchor_then_candidate(self) -> None:
-        self.assertEqual(_first_internal_match("banana", "ananas"), (1, 2))
-        self.assertIsNone(_first_internal_match("train", "to"))
-
     def test_candidate_is_perpendicular_and_does_not_consume_along_capacity(self) -> None:
         spec = SegmentSpec.from_cities(1, 23, (0, 0), (598, 0))
         pool = [word(1, "cat"), word(2, "plane"), word(3, "crane"), word(4, "sword")]
@@ -372,7 +367,7 @@ class OptionalCrossingTests(unittest.TestCase):
             [(item.word_text, item.offset_px) for item in baseline],
         )
 
-    def test_seven_letter_candidate_is_allowed_but_eight_is_not(self) -> None:
+    def test_perpendicular_candidate_length_is_limited_to_seven_cells(self) -> None:
         seven_cell_spec = SegmentSpec.from_cities(1, 30, (0, 0), (780, 0))
         seven_cell_words = [
             word(1, "cat"), word(2, "train"), word(3, "railway"), word(4, "sword"),
@@ -393,11 +388,11 @@ class OptionalCrossingTests(unittest.TestCase):
         eight_cell = generate_segment_proposals(
             [eight_cell_spec], eight_cell_words, rng=FirstChoiceRandom(1),
             attempts=1, choose_action=keep, route_segments=[eight_cell_spec],
-            crossing_candidates=[word(5, "seaside")],
+            crossing_candidates=[word(5, "seasidee")],
         )[1]
         self.assertTrue(all(item.orientation == "along" for item in eight_cell))
 
-    def test_endpoint_words_cannot_anchor_and_two_word_layout_has_no_pair(self) -> None:
+    def test_endpoint_words_cannot_anchor_and_three_word_layout_can_cross(self) -> None:
         spec = SegmentSpec.from_cities(1, 13, (0, 0), (338, 0))
         proposals = generate_segment_proposals(
             [spec], [word(1, "train"), word(2, "plane")],
@@ -414,7 +409,16 @@ class OptionalCrossingTests(unittest.TestCase):
             rng=FirstChoiceRandom(1), attempts=1, choose_action=keep,
             route_segments=[three_word_spec], crossing_candidates=[word(6, "trace")],
         )[2]
-        self.assertTrue(all(item.crossing_id is None for item in three_word_proposals))
+        three_word_along = [
+            item for item in three_word_proposals if item.orientation == "along"
+        ]
+        three_word_crossings = [
+            item for item in three_word_proposals if item.orientation == "perpendicular"
+        ]
+        self.assertEqual(len(three_word_crossings), 1)
+        self.assertIsNone(three_word_along[0].crossing_id)
+        self.assertIsNotNone(three_word_along[1].crossing_id)
+        self.assertIsNone(three_word_along[-1].crossing_id)
 
     def test_long_segment_can_have_three_crossing_pairs(self) -> None:
         spec = SegmentSpec.from_cities(1, 36, (0, 0), (936, 0))

@@ -392,7 +392,7 @@ def _proposal_from_published(word: PublishedWord) -> WordProposal:
 
 
 def maximum_crossing_pairs(words: Sequence[WordProposal]) -> int:
-    """Return the per-segment ceiling after excluding both endpoint words."""
+    """Return the per-segment crossing ceiling after excluding endpoint words."""
     middle_words = words[1:-1]
     if len(words) >= 3 and any(
         len(word.word_text) >= CROSSING_WORD_MIN_CELLS for word in middle_words
@@ -400,9 +400,8 @@ def maximum_crossing_pairs(words: Sequence[WordProposal]) -> int:
         policy_limit = CROSSING_MAX_PAIRS_LONG
     else:
         policy_limit = CROSSING_MAX_PAIRS_SHORT
-    interior_word_count = max(0, len(words) - 2)
-    available_non_overlapping_pairs = interior_word_count // 2
-    return min(policy_limit, available_non_overlapping_pairs)
+    available_anchors = max(0, len(words) - 2)
+    return min(policy_limit, available_anchors)
 
 
 def eligible_perpendicular_candidates(
@@ -414,7 +413,6 @@ def eligible_perpendicular_candidates(
     anchor_index: int,
     anchor_letter_index: int,
     required_letter: str,
-    required_length: int,
     candidates: Sequence[WordCandidate],
     used_words: Iterable[str],
 ) -> list[tuple[WordCandidate, tuple[int, ...]]]:
@@ -428,7 +426,11 @@ def eligible_perpendicular_candidates(
     eligible: list[tuple[WordCandidate, tuple[int, ...]]] = []
 
     for candidate in candidates:
-        if candidate.cells != required_length or candidate.key in used or candidate.key in seen:
+        if (
+            not CROSSING_WORD_MIN_CELLS <= candidate.cells <= CROSSING_WORD_MAX_CELLS
+            or candidate.key in used
+            or candidate.key in seen
+        ):
             continue
         seen.add(candidate.key)
         positions: list[int] = []
@@ -461,6 +463,44 @@ def eligible_perpendicular_candidates(
         if positions:
             eligible.append((candidate, tuple(positions)))
     return eligible
+
+
+def eligible_perpendicular_candidates_for_anchor(
+    spec: SegmentSpec,
+    route: Sequence[SegmentSpec],
+    aligned_words: Sequence[WordProposal],
+    published: Mapping[int, Sequence[PublishedWord]],
+    prior_crossings: Sequence[WordProposal],
+    anchor_index: int,
+    candidates: Sequence[WordCandidate],
+    used_words: Iterable[str],
+) -> list[tuple[int, WordCandidate, tuple[int, ...]]]:
+    """Find candidates for the first internal anchor letter with valid options."""
+    if not 1 <= anchor_index < len(aligned_words) - 1:
+        return []
+    anchor = aligned_words[anchor_index]
+    for anchor_letter_index in range(1, len(anchor.word_text) - 1):
+        required_letter = anchor.word_text[anchor_letter_index]
+        if not unicodedata.category(required_letter).startswith("L"):
+            continue
+        options = eligible_perpendicular_candidates(
+            spec,
+            route,
+            aligned_words,
+            published,
+            prior_crossings,
+            anchor_index,
+            anchor_letter_index,
+            required_letter,
+            candidates,
+            used_words,
+        )
+        if options:
+            return [
+                (anchor_letter_index, candidate, positions)
+                for candidate, positions in options
+            ]
+    return []
 
 
 def link_crossing_pair(
@@ -511,41 +551,24 @@ def _apply_optional_crossings(
     used.update(normalize_answer(word.word_text) for word in aligned)
     extras_after_anchor: dict[int, WordProposal] = {}
     accepted_crossings: list[WordProposal] = []
-    # The first along word is next to a city endpoint and cannot anchor a pair.
+    # Endpoint along words cannot be anchors.
     index, pair_count = 1, 0
-    while index + 1 < len(aligned) and pair_count < max_pairs:
-        slot_index = index + 1
-        anchor, slot = aligned[index], aligned[slot_index]
-        slot_length = len(slot.word_text)
-        if (
-            slot_index == len(aligned) - 1
-            or not CROSSING_WORD_MIN_CELLS <= slot_length <= CROSSING_WORD_MAX_CELLS
-        ):
-            index += 1
-            continue
-        match = _first_internal_match(anchor.word_text, slot.word_text)
-        if match is None:
-            index += 1
-            continue
-        anchor_letter_index, _slot_letter_index = match
-        required_letter = anchor.word_text[anchor_letter_index]
-        options = eligible_perpendicular_candidates(
+    while index < len(aligned) - 1 and pair_count < max_pairs:
+        anchor = aligned[index]
+        options = eligible_perpendicular_candidates_for_anchor(
             spec,
             route,
             aligned,
             published,
             accepted_crossings,
             index,
-            anchor_letter_index,
-            required_letter,
-            slot_length,
             crossing_candidates,
             used,
         )
         if not options:
             index += 1
             continue
-        candidate, candidate_positions = rng.choice(options)
+        anchor_letter_index, candidate, candidate_positions = rng.choice(options)
         candidate_letter_index = rng.choice(candidate_positions)
         aligned[index], perpendicular = link_crossing_pair(
             anchor, candidate, anchor_letter_index, candidate_letter_index, rng
@@ -554,7 +577,7 @@ def _apply_optional_crossings(
         accepted_crossings.append(perpendicular)
         used.add(candidate.key)
         pair_count += 1
-        index += 2
+        index += 1
 
     result: list[WordProposal] = []
     for index, word in enumerate(aligned):
@@ -562,20 +585,6 @@ def _apply_optional_crossings(
         if index in extras_after_anchor:
             result.append(extras_after_anchor[index])
     return result
-
-
-def _first_internal_match(anchor: str, candidate: str) -> tuple[int, int] | None:
-    for anchor_index in range(1, len(anchor) - 1):
-        if not unicodedata.category(anchor[anchor_index]).startswith("L"):
-            continue
-        for candidate_index in range(1, len(candidate) - 1):
-            if (
-                unicodedata.category(candidate[candidate_index]).startswith("L")
-                and normalize_answer(anchor[anchor_index])
-                == normalize_answer(candidate[candidate_index])
-            ):
-                return anchor_index, candidate_index
-    return None
 
 
 def _crossing_geometry_is_clear(

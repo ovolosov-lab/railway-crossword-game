@@ -53,9 +53,8 @@ from app.crossword_generator import (
     CrosswordGenerationError,
     SegmentSpec,
     WordCandidate,
-    _first_internal_match,
     _neighbor_angle_allows,
-    eligible_perpendicular_candidates,
+    eligible_perpendicular_candidates_for_anchor,
     generate_segment_proposals,
     link_crossing_pair,
     maximum_crossing_pairs,
@@ -497,7 +496,7 @@ async def _add_database_crossings(
     published: dict[int, list[PublishedWord]],
     rng: random.Random,
 ) -> dict[int, list[WordProposal]]:
-    """Query one same-length dictionary candidate set for each eligible slot."""
+    """Query eligible perpendicular candidates for each internal anchor."""
     used_words = {
         normalize_answer(word.word_text)
         for words in proposals.values()
@@ -517,26 +516,10 @@ async def _add_database_crossings(
         max_pairs = maximum_crossing_pairs(aligned)
         accepted: list[WordProposal] = []
         extras_after_anchor: dict[int, WordProposal] = {}
-        # Match the pure generator: endpoint along words cannot anchor pairs.
+        # Match the pure generator: endpoint along words cannot be anchors.
         index, pair_count = 1, 0
-        while index + 1 < len(aligned) and pair_count < max_pairs:
-            slot_index = index + 1
-            anchor, slot = aligned[index], aligned[slot_index]
-            slot_length = len(slot.word_text)
-            if (
-                slot_index == len(aligned) - 1
-                or not CROSSING_WORD_MIN_CELLS <= slot_length <= CROSSING_WORD_MAX_CELLS
-            ):
-                index += 1
-                continue
-
-            match = _first_internal_match(anchor.word_text, slot.word_text)
-            if match is None:
-                index += 1
-                continue
-            anchor_letter_index, _slot_letter_index = match
-            required_letter = anchor.word_text[anchor_letter_index]
-
+        while index < len(aligned) - 1 and pair_count < max_pairs:
+            anchor = aligned[index]
             rows = await db.execute(
                 select(
                     DictionaryWord.id,
@@ -546,7 +529,8 @@ async def _add_database_crossings(
                 .where(
                     DictionaryWord.is_active.is_(True),
                     DictionaryWord.language_code == language,
-                    DictionaryWord.letter_count == slot_length,
+                    DictionaryWord.letter_count >= CROSSING_WORD_MIN_CELLS,
+                    DictionaryWord.letter_count <= CROSSING_WORD_MAX_CELLS,
                 )
                 .order_by(DictionaryWord.id)
             )
@@ -557,16 +541,13 @@ async def _add_database_crossings(
                 except CrosswordGenerationError:
                     logger.warning("Skipping invalid crossing dictionary word {}", word_id)
 
-            options = eligible_perpendicular_candidates(
+            options = eligible_perpendicular_candidates_for_anchor(
                 spec,
                 route_specs,
                 aligned,
                 published,
                 accepted,
                 index,
-                anchor_letter_index,
-                required_letter,
-                slot_length,
                 candidates,
                 used_words,
             )
@@ -574,7 +555,7 @@ async def _add_database_crossings(
                 index += 1
                 continue
 
-            candidate, candidate_positions = rng.choice(options)
+            anchor_letter_index, candidate, candidate_positions = rng.choice(options)
             candidate_letter_index = rng.choice(candidate_positions)
             aligned[index], perpendicular = link_crossing_pair(
                 anchor,
@@ -587,7 +568,7 @@ async def _add_database_crossings(
             accepted.append(perpendicular)
             used_words.add(candidate.key)
             pair_count += 1
-            index += 2
+            index += 1
 
         if extras_after_anchor:
             with_extras: list[WordProposal] = []
