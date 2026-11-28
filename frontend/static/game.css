@@ -722,12 +722,13 @@
 }
 
 .word-dialog-heading .eyebrow {
-  margin: 0 0 5px;
+  display:none;
+  /* margin: 0 0 5px;
   color: #66776f;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  text-transform: uppercase; */
 }
 
 .word-dialog-heading h2 {
@@ -751,9 +752,11 @@
 }
 
 .word-definition {
+    font-family:coursive;
     margin: 18px 0 8px;
     line-height: 1.50;
-    font-size: 1.08rem;
+    font-size: 1.18rem;
+    color: #062674;
 }
 
 .word-length {
@@ -782,12 +785,12 @@
   border-radius: 9px;
   color: #203b31;
   font: inherit;
-  font-size:1.2rem;
+  font-size:1.3rem;
   letter-spacing: 0.2em;
 }
 
 .guess-input:focus-visible {
-  border-color: #5145e5;
+  border-color: #2563eb;
   outline: 3px solid rgb(81 69 229 / 18%);
 }
 
@@ -805,12 +808,12 @@
 }
 
 .hint-feedback {
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .word-feedback[data-kind="success"],
 .hint-feedback[data-kind="success"] {
-  color: #276047;
+  color: #062674;
 }
 
 .word-hints {
